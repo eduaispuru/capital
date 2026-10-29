@@ -35,6 +35,7 @@ const FONTS = [
 ];
 const OPTIONS = {
   dropcap: [['none', 'Ninguna'], ['clasica', 'Clásica'], ['elevada', 'Elevada'], ['ornamental', 'Ornamental']],
+  dropLines: [['2', '2 líneas'], ['3', '3 líneas'], ['4', '4 líneas']],
   chapter: [['versalitas', 'Versalitas'], ['ornamento', 'Con ornamento'], ['cursiva', 'Cursiva'], ['moderno', 'Moderno']],
   level: [['auto', 'Automático'], ['1', '#'], ['2', '##']],
   para: [['sangria', 'Sangría'], ['amplia', 'Sangría amplia'], ['espacio', 'Espacio entre párrafos']],
@@ -49,7 +50,7 @@ const PRESETS = {
 const PAGE_SIZES = { a5: [148, 210], '6x9': [152.4, 228.6], a4: [210, 297] };
 const STYLE_KEYS = ['font', 'size', 'leading', 'dropcap', 'firstline', 'chapter', 'para', 'justify'];
 const presetValues = (p) => Object.fromEntries(STYLE_KEYS.map((k) => [k, p[k]]));
-const STYLE_DEFAULTS = { preset: 'tinta', ...presetValues(PRESETS.tinta), page: 'a5', folios: true, chapterSpace: true, level: 'auto' };
+const STYLE_DEFAULTS = { preset: 'tinta', ...presetValues(PRESETS.tinta), page: 'a5', folios: true, chapterSpace: true, level: 'auto', dropLines: '3' };
 let style = { ...STYLE_DEFAULTS };
 
 /* ---------- Guardado de preferencias ---------- */
@@ -90,6 +91,7 @@ function applyStyle() {
   const root = document.documentElement.style;
   root.setProperty('--font-body', `'${f.id}', Georgia, serif`);
   root.setProperty('--lh', style.leading);
+  root.setProperty('--dc-lines', style.dropLines);
   const d = document.body.dataset;
   d.dropcap = style.dropcap;
   d.chapter = style.chapter;
@@ -128,6 +130,7 @@ function layout() {
   s.setProperty('--m-side', side + 'px');
   s.setProperty('--content-h', (H - top - bottom) + 'px');
   s.setProperty('--gap', gap + 'px');
+  printSetup(mw, mh, f);
   state.step = paged ? H + gap : 0;
   state.contentH = H - top - bottom;
   state.gap = gap;
@@ -137,7 +140,7 @@ function layout() {
 // Dibuja una hoja de papel detrás de cada página que ocupa el texto
 function paginate() {
   const pre = editorRoot();
-  if (!pre) return;
+  if (!pre || state.source) return;
   document.body.dataset.level = chapterLevel(pre);
   if (!state.step) {
     pagesEl.innerHTML = '';
@@ -159,6 +162,33 @@ function paginate() {
     book.style.height = (n * state.step - state.gap) + 'px';
   }
   renderOutline();
+}
+
+// Página real para el PDF: mismo tamaño, márgenes y letra que en pantalla, en milímetros
+function printSetup(mw, mh, f) {
+  const top = mh * 0.09, bottom = mh * 0.1, side = mw * 0.13;
+  const base = style.page === 'a4' ? 760 : 640;
+  const fsMm = style.size * (f.scale || 1) * mw / base;
+  const contentMm = mh - top - bottom;
+  const s = document.documentElement.style;
+  s.setProperty('--fs-print', fsMm.toFixed(2) + 'mm');
+  s.setProperty('--chapter-space-print', (contentMm * 0.22).toFixed(1) + 'mm');
+  s.setProperty('--title-space-print', (contentMm * 0.3).toFixed(1) + 'mm');
+  const folio = style.folios
+    ? `@bottom-center { content: counter(page); font-family: '${f.id}', Georgia, serif; font-size: ${(fsMm * 0.72).toFixed(2)}mm; color: #8a8378; vertical-align: top; padding-top: ${(bottom * 0.18).toFixed(1)}mm; }`
+    : '';
+  $('printPage').textContent =
+    `@page { size: ${mw}mm ${mh}mm; margin: ${top.toFixed(1)}mm ${side.toFixed(1)}mm ${bottom.toFixed(1)}mm; ${folio} }`;
+}
+
+function exportPdf() {
+  if (state.source) toggleSource();
+  closeMenus();
+  if (document.activeElement) document.activeElement.blur();
+  const prev = document.title;
+  if (state.file) document.title = state.file.handle.name.replace(/\.(md|markdown|txt)$/i, '');
+  toast('Elegí "Guardar como PDF" como destino');
+  setTimeout(() => { window.print(); document.title = prev; }, 150);
 }
 
 // Automático: si hay un solo # (el título del libro) y algún ##, los capítulos son ##
@@ -206,6 +236,7 @@ function buildDrawer() {
     '<label class="range">Interlineado <input type="range" id="opt-leading" data-key="leading" min="1.3" max="2.2" step="0.05"><output id="out-leading"></output></label>' +
     '</section>' +
     seg('dropcap', 'Letra capitular') + check('firstline', 'Primera línea en versalitas') + '</section>' +
+    seg('dropLines', 'Alto de la capitular') + '</section>' +
     seg('chapter', 'Títulos de capítulo') + check('chapterSpace', 'Espacio antes de cada capítulo') + '</section>' +
     seg('level', 'Los capítulos se marcan con') +
       '<p class="hint">En automático, si hay un solo # lo toma como título del libro y los capítulos pasan a ser ##.</p></section>' +
@@ -220,7 +251,7 @@ function buildDrawer() {
     const f = e.target.closest('[data-font]');
     if (f) { style.font = f.dataset.font; style.preset = null; return refreshStyle(); }
     const b = e.target.closest('.seg button');
-    if (b) { style[b.parentElement.dataset.key] = b.dataset.val; if (!['page', 'level'].includes(b.parentElement.dataset.key)) style.preset = null; refreshStyle(); }
+    if (b) { style[b.parentElement.dataset.key] = b.dataset.val; if (!['page', 'level', 'dropLines'].includes(b.parentElement.dataset.key)) style.preset = null; refreshStyle(); }
   });
   body.addEventListener('input', (e) => {
     const k = e.target.dataset.key;
@@ -288,8 +319,45 @@ function setText(md) {
   state.editor.setValue(md, true);
   state.loading = false;
   state.dirty = false;
+  if (state.source) { $('source').value = md; fitSource(); }
   renderOutline();
   desk.scrollTop = 0;
+}
+
+// Texto actual, venga del editor visual o del código fuente
+function currentText() { return state.source ? $('source').value : state.editor.getValue(); }
+
+/* ---------- Código fuente (Ctrl+/) ---------- */
+function fitSource() {
+  const ta = $('source');
+  ta.style.height = 'auto';
+  ta.style.height = ta.scrollHeight + 'px';
+}
+
+function toggleSource() {
+  const ta = $('source');
+  const on = !state.source;
+  // Mantener aproximadamente la misma zona del texto a la vista
+  const ratio = desk.scrollTop / Math.max(1, desk.scrollHeight - desk.clientHeight);
+  if (on) {
+    ta.value = state.editor.getValue();
+    state.source = true;
+    document.body.dataset.source = 'yes';
+    book.style.height = '';
+    fitSource();
+    ta.focus({ preventScroll: true });
+  } else {
+    const wasDirty = state.dirty;
+    state.loading = true;
+    state.editor.setValue(ta.value, true);
+    state.loading = false;
+    state.dirty = wasDirty;
+    state.source = false;
+    document.body.dataset.source = 'no';
+    paginate();
+    focusEditor();
+  }
+  desk.scrollTop = ratio * (desk.scrollHeight - desk.clientHeight);
 }
 
 /* ---------- Archivos ---------- */
@@ -297,13 +365,13 @@ async function save() {
   clearTimeout(onInput.timer);
   if (!state.file) return saveAs();
   if (!state.dirty) return;
-  const text = state.editor.getValue();
+  const text = currentText();
   try {
     setSaveState('Guardando…');
     const w = await state.file.handle.createWritable();
     await w.write(text);
     await w.close();
-    if (state.editor.getValue() === text) { state.dirty = false; setSaveState('Guardado'); }
+    if (currentText() === text) { state.dirty = false; setSaveState('Guardado'); }
   } catch (e) {
     setSaveState('No se pudo guardar');
     toast('No se pudo guardar: ' + (e.message || e.name));
@@ -611,6 +679,9 @@ const COMMANDS = {
   newFolder: () => askName('folder'),
   save,
   toggleSidebar: () => { shell.classList.toggle('no-side'); setPref('side', !shell.classList.contains('no-side')); },
+  toggleSource,
+  exportPdf,
+  toggleZoomBar: () => { const z = $('zoomBar'); z.hidden = !z.hidden; setPref('zoomBar', !z.hidden); },
   showFiles: () => showTab('files'),
   showOutline: () => showTab('outline'),
   focusMode: toggleFocus,
@@ -639,6 +710,8 @@ window.addEventListener('keydown', (e) => {
   else if (mod && !e.shiftKey && k === 'o') { e.preventDefault(); openOneFile(); }
   else if (mod && e.shiftKey && k === 'l') { e.preventDefault(); COMMANDS.toggleSidebar(); }
   else if (e.key === 'F8') { e.preventDefault(); toggleFocus(); }
+  else if (mod && !e.shiftKey && e.key === '/') { e.preventDefault(); toggleSource(); }
+  else if (mod && !e.shiftKey && k === 'p') { e.preventDefault(); exportPdf(); }
 }, true);
 
 $('tabFiles').onclick = () => showTab('files');
@@ -661,6 +734,14 @@ window.addEventListener('beforeunload', (e) => { if (state.dirty) { save(); e.pr
   $('zoomMinus').onclick = () => setZoom(state.zoom - 0.1);
   $('zoomPlus').onclick = () => setZoom(state.zoom + 0.1);
   $('zoomOut').onclick = () => setZoom(1);
+  $('zoomBar').hidden = pref('zoomBar', true) === false;
+  document.body.dataset.source = 'no';
+  $('source').addEventListener('input', () => { fitSource(); onInput(); });
+  $('source').addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    e.preventDefault();
+    document.execCommand('insertText', false, '\t');
+  });
   $('zoomRange').value = Math.round(state.zoom * 100);
   $('zoomOut').textContent = Math.round(state.zoom * 100) + ' %';
   buildDrawer();

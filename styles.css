@@ -26,6 +26,7 @@
   --content-h: 735px;
   --gap: 40px;
   --zoom: 1;
+  --dc-lines: 3;
   color-scheme: light;
 }
 
@@ -209,11 +210,11 @@ body[data-level="2"][data-paged="yes"] .vditor-reset > h1 { padding-top: calc(va
 /* Letra capitular */
 .vditor-reset > :is(h1, h2, hr) + p, .vditor-reset > p:first-child { text-indent: 0 !important; }
 body[data-dropcap="clasica"] .vditor-reset > :is(h1, h2, hr) + p::first-letter,
-body[data-dropcap="clasica"] .vditor-reset > p:first-child::first-letter { initial-letter: 3; margin-right: .1em; }
+body[data-dropcap="clasica"] .vditor-reset > p:first-child::first-letter { initial-letter: var(--dc-lines); margin-right: .1em; }
 body[data-dropcap="elevada"] .vditor-reset > :is(h1, h2, hr) + p::first-letter,
-body[data-dropcap="elevada"] .vditor-reset > p:first-child::first-letter { initial-letter: 3 1; margin-right: .06em; }
+body[data-dropcap="elevada"] .vditor-reset > p:first-child::first-letter { initial-letter: var(--dc-lines) 1; margin-right: .06em; }
 body[data-dropcap="ornamental"] .vditor-reset > :is(h1, h2, hr) + p::first-letter,
-body[data-dropcap="ornamental"] .vditor-reset > p:first-child::first-letter { initial-letter: 3; margin-right: .12em; font-family: 'Cinzel Decorative', var(--font-body); color: var(--ribbon); }
+body[data-dropcap="ornamental"] .vditor-reset > p:first-child::first-letter { initial-letter: var(--dc-lines); margin-right: .12em; font-family: 'Cinzel Decorative', var(--font-body); color: var(--ribbon); }
 body[data-firstline="yes"] .vditor-reset > :is(h1, h2, hr) + p::first-line,
 body[data-firstline="yes"] .vditor-reset > p:first-child::first-line { font-variant-caps: small-caps; letter-spacing: .05em; }
 
@@ -226,7 +227,7 @@ body[data-firstline="yes"] .vditor-reset > p:first-child::first-line { font-vari
 .vditor-ir__marker { font-family: var(--font-body); }
 
 /* Salto de página (---) */
-body[data-paged="yes"] .vditor-reset hr { break-after: column; height: 0 !important; border: 0 !important; border-top: 1px dashed var(--side-line) !important; background: none !important; margin: 1em 30% 0 !important; }
+body[data-paged="yes"] .vditor-reset hr { break-after: column; height: 0 !important; border: 0 !important; border-top: 1px dashed var(--side-line) !important; background: none !important; width: 30% !important; max-width: 30% !important; margin: 1em auto 0 !important; }
 body[data-paged="no"] .vditor-reset hr {
   height: 56px !important; border: 0 !important; margin: 64px 0 64px calc(-1 * var(--m-side)) !important;
   width: calc(100% + 2 * var(--m-side)) !important; max-width: none !important;
@@ -291,6 +292,23 @@ body[data-paged="no"] .vditor-reset hr {
 .zoom button:hover { background: var(--hover); color: var(--ink); }
 .zoom input { width: 120px; accent-color: var(--ribbon); }
 .zoom .zoom-val { width: auto; min-width: 54px; border-radius: 999px; padding: 0 6px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.zoom .zoom-hide { color: var(--ink-faint); font-size: 16px; border-left: 1px solid var(--side-line); border-radius: 0 999px 999px 0; }
+
+/* ---------- Código fuente ---------- */
+#source { display: none; }
+body[data-source="yes"] #editor, body[data-source="yes"] .pages { display: none; }
+body[data-source="yes"] .book { height: auto !important; background: var(--paper); box-shadow: 0 1px 2px rgb(60 50 30 / .07), 0 12px 32px -8px rgb(60 50 30 / .16); }
+body[data-source="yes"] #source {
+  display: block; width: 100%; min-height: 70vh; resize: none; overflow: hidden; border: 0; outline: none;
+  background: transparent; color: var(--ink); tab-size: 4;
+  padding: var(--m-top) var(--m-side) var(--m-bottom);
+  font: calc(15px * var(--zoom)) / 1.7 "Cascadia Mono", Consolas, ui-monospace, monospace;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+body[data-source="yes"] .book::before {
+  content: "Código fuente · Ctrl+/ para volver"; position: absolute; top: 14px; right: 18px;
+  font: italic 13px var(--font-side); color: var(--ink-faint);
+}
 @media (min-width: 1300px) { body.drawer-open .zoom { right: 400px; } }
 @media (max-width: 640px) { .zoom input { width: 80px; } }
 
@@ -308,3 +326,22 @@ body[data-paged="no"] .vditor-reset hr {
   .shell:not(.no-side) .desk { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* ---------- Exportar a PDF: el navegador arma las páginas al tamaño real (ver @page en app.js) ---------- */
+@media print {
+  html, body { height: auto; overflow: visible; background: #fff; display: block; }
+  .menubar, .sidebar, .drawer, .zoom, .toast, .pages, #source, .book::before { display: none !important; }
+  .shell { display: block; margin: 0 !important; }
+  .desk { overflow: visible; padding: 0; background: none; }
+  .book { width: auto !important; max-width: none; height: auto !important; margin: 0; background: none !important; box-shadow: none !important; }
+  body[data-source="yes"] #editor { display: block; }
+  #editor { padding: 0; }
+  .vditor-reset { font-size: var(--fs-print) !important; color: #000 !important; }
+  .vditor-ir pre.vditor-reset { column-count: auto !important; column-height: auto !important; column-wrap: nowrap !important; row-gap: normal !important; orphans: 2; widows: 2; }
+  .vditor-reset > h1, body[data-level="2"] .vditor-reset > h2 { break-before: page !important; }
+  body[data-chapter-space="yes"] :is(body[data-level="1"] .vditor-reset > h1, body[data-level="2"] .vditor-reset > h2) { padding-top: var(--chapter-space-print) !important; }
+  body[data-level="2"] .vditor-reset > h1 { padding-top: var(--title-space-print) !important; break-after: page; }
+  .vditor-reset hr { break-after: page !important; visibility: hidden; height: 0 !important; margin: 0 !important; border: 0 !important; box-shadow: none !important; background: none !important; }
+  .vditor-ir__marker { display: none !important; }
+  .vditor-reset > * { opacity: 1 !important; }
+}

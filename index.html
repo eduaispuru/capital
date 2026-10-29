@@ -23,12 +23,16 @@
       <button type="button" role="menuitem" data-cmd="newFolder">Nueva carpeta</button>
       <hr>
       <button type="button" role="menuitem" data-cmd="save">Guardar<kbd>Ctrl+S</kbd></button>
+      <button type="button" role="menuitem" data-cmd="exportPdf">Exportar como PDF…<kbd>Ctrl+P</kbd></button>
     </div>
   </div>
   <div class="menu">
     <button class="menu-btn" type="button" aria-haspopup="true">Visualización</button>
     <div class="menu-list" role="menu">
+      <button type="button" role="menuitem" data-cmd="toggleSource">Código fuente<kbd>Ctrl+/</kbd></button>
+      <hr>
       <button type="button" role="menuitem" data-cmd="toggleSidebar">Barra lateral<kbd>Ctrl+Shift+L</kbd></button>
+      <button type="button" role="menuitem" data-cmd="toggleZoomBar">Barra de zoom</button>
       <button type="button" role="menuitem" data-cmd="showFiles">Archivos</button>
       <button type="button" role="menuitem" data-cmd="showOutline">Índice</button>
       <hr>
@@ -42,6 +46,7 @@
       <p><b>#</b> espacio → capítulo (empieza en página nueva)</p>
       <p><b>##</b> espacio → subtítulo</p>
       <p><b>---</b> Enter → salto de página</p>
+      <p><b>Ctrl+/</b> ver y editar el código fuente</p>
       <p><b>Ctrl+B</b> negrita · <b>Ctrl+I</b> cursiva</p>
       <p><b>&gt;</b> espacio → cita</p>
       <p>Se guarda solo mientras escribís.</p>
@@ -90,6 +95,7 @@
     <div class="book" id="book">
       <div class="pages" id="pages" aria-hidden="true"></div>
       <div id="editor"></div>
+      <textarea id="source" spellcheck="true" aria-label="Código fuente Markdown"></textarea>
     </div>
   </main>
 </div>
@@ -102,12 +108,14 @@
   <div id="drawerBody"></div>
 </aside>
 
-<div class="zoom" role="group" aria-label="Zoom">
+<div class="zoom" id="zoomBar" role="group" aria-label="Zoom">
   <button type="button" id="zoomMinus" aria-label="Alejar">−</button>
   <input type="range" id="zoomRange" min="50" max="200" step="5" aria-label="Zoom de la hoja">
   <button type="button" id="zoomPlus" aria-label="Acercar">+</button>
   <button type="button" id="zoomOut" class="zoom-val" title="Volver a 100 %">100 %</button>
+  <button type="button" class="zoom-hide" data-cmd="toggleZoomBar" title="Ocultar (volver a mostrar desde Visualización)" aria-label="Ocultar barra de zoom">×</button>
 </div>
+<style id="printPage"></style>
 
 <div class="toast" id="toast" role="status" hidden></div>
 
