@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Capital</title>
+<meta name="theme-color" content="#201f1d">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="vendor/vditor/dist/index.css">
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<nav class="menubar" aria-label="Menú">
+  <div class="menu">
+    <button class="menu-btn" type="button" aria-haspopup="true">Archivo</button>
+    <div class="menu-list" role="menu">
+      <button type="button" role="menuitem" data-cmd="openFolder">Abrir carpeta…</button>
+      <button type="button" role="menuitem" data-cmd="openOneFile">Abrir archivo…<kbd>Ctrl+O</kbd></button>
+      <button type="button" role="menuitem" data-cmd="newFile">Nuevo archivo<kbd>Ctrl+N</kbd></button>
+      <button type="button" role="menuitem" data-cmd="newFolder">Nueva carpeta</button>
+      <hr>
+      <button type="button" role="menuitem" data-cmd="save">Guardar<kbd>Ctrl+S</kbd></button>
+    </div>
+  </div>
+  <div class="menu">
+    <button class="menu-btn" type="button" aria-haspopup="true">Visualización</button>
+    <div class="menu-list" role="menu">
+      <button type="button" role="menuitem" data-cmd="toggleSidebar">Barra lateral<kbd>Ctrl+Shift+L</kbd></button>
+      <button type="button" role="menuitem" data-cmd="showFiles">Archivos</button>
+      <button type="button" role="menuitem" data-cmd="showOutline">Índice</button>
+      <hr>
+      <button type="button" role="menuitem" data-cmd="focusMode">Modo concentración<kbd>F8</kbd></button>
+    </div>
+  </div>
+  <button class="menu-btn" type="button" data-cmd="toggleStyle" id="styleBtn">Estilo</button>
+  <div class="menu">
+    <button class="menu-btn" type="button" aria-haspopup="true">Ayuda</button>
+    <div class="menu-list menu-help" role="menu">
+      <p><b>#</b> espacio → capítulo (empieza en página nueva)</p>
+      <p><b>##</b> espacio → subtítulo</p>
+      <p><b>---</b> Enter → salto de página</p>
+      <p><b>Ctrl+B</b> negrita · <b>Ctrl+I</b> cursiva</p>
+      <p><b>&gt;</b> espacio → cita</p>
+      <p>Se guarda solo mientras escribís.</p>
+    </div>
+  </div>
+  <span class="doc-name" id="docName"></span>
+  <span class="save-state" id="saveState"></span>
+</nav>
+
+<div class="shell" id="shell">
+  <aside class="sidebar" id="sidebar">
+    <header class="side-head">
+      <p class="eyebrow">Biblioteca</p>
+      <h2 class="side-title" id="sideTitle">Capital</h2>
+      <div class="fleuron" aria-hidden="true">❦</div>
+    </header>
+    <div class="side-tabs" role="tablist">
+      <button type="button" role="tab" id="tabFiles" aria-selected="true">Archivos</button>
+      <span aria-hidden="true">·</span>
+      <button type="button" role="tab" id="tabOutline" aria-selected="false">Índice</button>
+    </div>
+
+    <section class="side-panel" id="panelFiles">
+      <div class="tree-empty" id="treeEmpty">
+        <p>Elegí la carpeta donde guardás tus escritos.</p>
+        <button type="button" class="reopen" id="reopenBtn" hidden></button>
+        <button type="button" class="pill" id="openFolderBtn">Abrir carpeta</button>
+        <p class="hint">En la ventana que se abre solo se ven carpetas, no archivos. Entrá a la carpeta y apretá <b>Seleccionar carpeta</b>; tus archivos .md van a aparecer acá.</p>
+        <button type="button" class="link" id="openFileBtn">O abrir un solo archivo .md</button>
+      </div>
+      <ul class="tree" id="tree" role="tree"></ul>
+    </section>
+
+    <section class="side-panel" id="panelOutline" hidden>
+      <ol class="outline" id="outline"></ol>
+    </section>
+
+    <footer class="side-foot" id="sideFoot" hidden>
+      <button type="button" data-cmd="newFile" title="Nuevo archivo en la carpeta elegida">+ Nuevo texto</button>
+      <span aria-hidden="true">·</span>
+      <button type="button" data-cmd="newFolder" title="Nueva carpeta en la carpeta elegida">+ Carpeta</button>
+    </footer>
+  </aside>
+
+  <main class="desk" id="desk">
+    <div class="book" id="book">
+      <div class="pages" id="pages" aria-hidden="true"></div>
+      <div id="editor"></div>
+    </div>
+  </main>
+</div>
+
+<aside class="drawer" id="drawer" aria-label="Estilo" hidden>
+  <header class="drawer-head">
+    <h2>Estilo</h2>
+    <button type="button" class="drawer-close" data-cmd="toggleStyle" aria-label="Cerrar">×</button>
+  </header>
+  <div id="drawerBody"></div>
+</aside>
+
+<div class="zoom" role="group" aria-label="Zoom">
+  <button type="button" id="zoomMinus" aria-label="Alejar">−</button>
+  <input type="range" id="zoomRange" min="50" max="200" step="5" aria-label="Zoom de la hoja">
+  <button type="button" id="zoomPlus" aria-label="Acercar">+</button>
+  <button type="button" id="zoomOut" class="zoom-val" title="Volver a 100 %">100 %</button>
+</div>
+
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="vendor/vditor/dist/index.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

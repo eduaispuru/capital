@@ -1,0 +1,22 @@
+{
+  "name": "Capital",
+  "short_name": "Capital",
+  "description": "Editor de Markdown para escribir, con el texto formateado mientras escribís.",
+  "lang": "es",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#e8e4dd",
+  "theme_color": "#201f1d",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "file_handlers": [
+    {
+      "action": "./",
+      "accept": { "text/markdown": [".md", ".markdown"] }
+    }
+  ]
+}

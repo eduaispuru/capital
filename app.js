@@ -1,0 +1,685 @@
+'use strict';
+
+const WELCOME = `# Bienvenido a Capital
+
+Capital es un editor de Markdown que muestra el texto ya formateado mientras escribís. Los símbolos aparecen solo cuando el cursor está encima.
+
+Para empezar, abrí la carpeta donde guardás tus escritos con **Abrir carpeta**, a la izquierda. Los cambios se guardan solos en el archivo.
+
+En el menú **Estilo** elegís la fuente, la letra capitular, el tamaño de página y cómo se ven los capítulos.
+
+# Lo básico
+
+Un numeral y un espacio al principio de la línea crean un capítulo, que siempre empieza en una página nueva. Dos numerales, un subtítulo. Tres guiones seguidos y Enter dejan un salto de página.
+
+> Las citas empiezan con el signo mayor.
+`;
+
+const $ = (id) => document.getElementById(id);
+const shell = $('shell'), desk = $('desk'), tree = $('tree'), book = $('book'), pagesEl = $('pages');
+const state = { editor: null, root: null, file: null, target: null, dirty: false, loading: false, openDirs: new Set(), step: 0 };
+const FS_OK = 'showDirectoryPicker' in window;
+const PAGES_OK = CSS.supports('column-wrap', 'wrap') && CSS.supports('column-height', '1px');
+
+/* ---------- Estilo del libro ---------- */
+const FONTS = [
+  { id: 'Gelasio', note: 'Sobria, de pantalla' },
+  { id: 'EB Garamond', note: 'Garamond renacentista', scale: 1.08 },
+  { id: 'Cormorant Garamond', note: 'Garamond elegante', scale: 1.16 },
+  { id: 'Libre Baskerville', note: 'Baskerville', scale: 0.9 },
+  { id: 'Crimson Pro', note: 'Libro contemporáneo', scale: 1.08 },
+  { id: 'Spectral', note: 'Editorial' },
+  { id: 'Literata', note: 'Para lectura larga', scale: 0.96 },
+  { id: 'Alegreya', note: 'Caligráfica', scale: 1.02 },
+  { id: 'IM Fell English', note: 'Imprenta antigua', scale: 1.04 },
+];
+const OPTIONS = {
+  dropcap: [['none', 'Ninguna'], ['clasica', 'Clásica'], ['elevada', 'Elevada'], ['ornamental', 'Ornamental']],
+  chapter: [['versalitas', 'Versalitas'], ['ornamento', 'Con ornamento'], ['cursiva', 'Cursiva'], ['moderno', 'Moderno']],
+  level: [['auto', 'Automático'], ['1', '#'], ['2', '##']],
+  para: [['sangria', 'Sangría'], ['amplia', 'Sangría amplia'], ['espacio', 'Espacio entre párrafos']],
+  page: [['a5', 'Novela A5'], ['6x9', '6 × 9 in'], ['a4', 'A4'], ['continuo', 'Sin páginas']],
+};
+const PRESETS = {
+  tinta: { name: 'Capital', desc: 'Sobria y legible', font: 'Gelasio', size: 17, leading: 1.85, dropcap: 'none', firstline: false, chapter: 'versalitas', para: 'amplia', justify: false },
+  clasico: { name: 'Clásico', desc: 'Novela tradicional', font: 'EB Garamond', size: 17, leading: 1.6, dropcap: 'clasica', firstline: true, chapter: 'ornamento', para: 'sangria', justify: true },
+  antiguo: { name: 'Edición antigua', desc: 'Imprenta de época', font: 'IM Fell English', size: 17, leading: 1.65, dropcap: 'ornamental', firstline: true, chapter: 'versalitas', para: 'sangria', justify: true },
+  moderno: { name: 'Contemporáneo', desc: 'Limpio y actual', font: 'Literata', size: 16.5, leading: 1.75, dropcap: 'elevada', firstline: false, chapter: 'moderno', para: 'sangria', justify: false },
+};
+const PAGE_SIZES = { a5: [148, 210], '6x9': [152.4, 228.6], a4: [210, 297] };
+const STYLE_KEYS = ['font', 'size', 'leading', 'dropcap', 'firstline', 'chapter', 'para', 'justify'];
+const presetValues = (p) => Object.fromEntries(STYLE_KEYS.map((k) => [k, p[k]]));
+const STYLE_DEFAULTS = { preset: 'tinta', ...presetValues(PRESETS.tinta), page: 'a5', folios: true, chapterSpace: true, level: 'auto' };
+let style = { ...STYLE_DEFAULTS };
+
+/* ---------- Guardado de preferencias ---------- */
+function pref(key, fallback) {
+  try { const v = localStorage.getItem('tinta:' + key); return v === null ? fallback : JSON.parse(v); } catch (e) { return fallback; }
+}
+function setPref(key, value) {
+  try { localStorage.setItem('tinta:' + key, JSON.stringify(value)); } catch (e) {}
+}
+function idb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open('tinta', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function kv(key, value) {
+  const db = await idb();
+  return new Promise((res, rej) => {
+    const store = db.transaction('kv', value === undefined ? 'readonly' : 'readwrite').objectStore('kv');
+    const q = value === undefined ? store.get(key) : store.put(value, key);
+    q.onsuccess = () => res(q.result);
+    q.onerror = () => rej(q.error);
+  });
+}
+
+/* ---------- Avisos ---------- */
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.hidden = false;
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => { t.hidden = true; }, 2600);
+}
+function setSaveState(text) { $('saveState').textContent = text; }
+
+/* ---------- Estilo y páginas ---------- */
+function applyStyle() {
+  const f = FONTS.find((x) => x.id === style.font) || FONTS[0];
+  const root = document.documentElement.style;
+  root.setProperty('--font-body', `'${f.id}', Georgia, serif`);
+  root.setProperty('--lh', style.leading);
+  const d = document.body.dataset;
+  d.dropcap = style.dropcap;
+  d.chapter = style.chapter;
+  d.para = style.para;
+  d.justify = style.justify ? 'yes' : 'no';
+  d.firstline = style.firstline ? 'yes' : 'no';
+  d.folios = style.folios ? 'yes' : 'no';
+  d.chapterSpace = style.chapterSpace ? 'yes' : 'no';
+  setPref('style', style);
+  layout();
+}
+
+function layout() {
+  const paged = PAGES_OK && style.page !== 'continuo';
+  document.body.dataset.paged = paged ? 'yes' : 'no';
+  const [mw, mh] = PAGE_SIZES[style.page] || PAGE_SIZES.a5;
+  // El zoom agranda la hoja y la letra juntas, así cada página conserva el mismo texto
+  const base = style.page === 'a4' ? 760 : 640;
+  const fit = (desk.clientWidth - 32) / base;
+  const z = state.zoom > 1 ? state.zoom : Math.max(280 / base, Math.min(state.zoom, fit));
+  const W = Math.round(base * z);
+  const f = FONTS.find((x) => x.id === style.font) || FONTS[0];
+  document.documentElement.style.setProperty('--fs', (style.size * (f.scale || 1) * z).toFixed(2) + 'px');
+  document.documentElement.style.setProperty('--zoom', z);
+  const H = Math.round(W * mh / mw);
+  const narrow = W < 520;
+  const top = Math.round(H * (narrow ? 0.06 : 0.09));
+  const bottom = Math.round(H * (narrow ? 0.07 : 0.1));
+  const side = Math.round(W * (narrow ? 0.07 : 0.13));
+  const gap = narrow ? 24 : 40;
+  const s = document.documentElement.style;
+  s.setProperty('--page-w', W + 'px');
+  s.setProperty('--page-h', H + 'px');
+  s.setProperty('--m-top', top + 'px');
+  s.setProperty('--m-bottom', bottom + 'px');
+  s.setProperty('--m-side', side + 'px');
+  s.setProperty('--content-h', (H - top - bottom) + 'px');
+  s.setProperty('--gap', gap + 'px');
+  state.step = paged ? H + gap : 0;
+  state.contentH = H - top - bottom;
+  state.gap = gap;
+  paginate();
+}
+
+// Dibuja una hoja de papel detrás de cada página que ocupa el texto
+function paginate() {
+  const pre = editorRoot();
+  if (!pre) return;
+  document.body.dataset.level = chapterLevel(pre);
+  if (!state.step) {
+    pagesEl.innerHTML = '';
+    book.style.height = '';
+  } else {
+    const rowGap = state.step - state.contentH;
+    const n = Math.max(1, Math.round((pre.offsetHeight + rowGap) / state.step));
+    while (pagesEl.children.length < n) {
+      const page = document.createElement('div');
+      page.className = 'page';
+      page.innerHTML = '<span class="folio"></span>';
+      pagesEl.append(page);
+    }
+    while (pagesEl.children.length > n) pagesEl.lastChild.remove();
+    [...pagesEl.children].forEach((page, i) => {
+      page.style.top = i * state.step + 'px';
+      page.firstChild.textContent = i + 1;
+    });
+    book.style.height = (n * state.step - state.gap) + 'px';
+  }
+  renderOutline();
+}
+
+// Automático: si hay un solo # (el título del libro) y algún ##, los capítulos son ##
+function chapterLevel(pre) {
+  if (style.level !== 'auto') return style.level;
+  const h1 = pre.querySelectorAll(':scope > h1').length;
+  const h2 = pre.querySelectorAll(':scope > h2').length;
+  return h1 <= 1 && h2 > 0 ? '2' : '1';
+}
+
+function setZoom(z) {
+  state.zoom = Math.round(Math.min(2, Math.max(0.5, z)) * 100) / 100;
+  setPref('zoom', state.zoom);
+  $('zoomRange').value = Math.round(state.zoom * 100);
+  $('zoomOut').textContent = Math.round(state.zoom * 100) + ' %';
+  const anchor = desk.scrollTop / Math.max(1, desk.scrollHeight);
+  layout();
+  desk.scrollTop = anchor * desk.scrollHeight;
+}
+
+function pageOf(el) {
+  if (!state.step) return null;
+  const y = el.getBoundingClientRect().top - pagesEl.getBoundingClientRect().top;
+  return Math.floor(y / state.step) + 1;
+}
+
+/* Panel de estilo */
+function seg(key, title) {
+  return `<section><h3>${title}</h3><div class="seg" data-key="${key}">` +
+    OPTIONS[key].map(([v, label]) => `<button type="button" data-val="${v}">${label}</button>`).join('') + '</div>';
+}
+function check(key, label) {
+  return `<label class="check"><input type="checkbox" data-key="${key}" id="opt-${key}"> ${label}</label>`;
+}
+function buildDrawer() {
+  $('drawerBody').innerHTML =
+    '<section><h3>Estilos</h3><div class="presets">' +
+      Object.entries(PRESETS).map(([id, p]) =>
+        `<button type="button" class="preset" data-preset="${id}"><span class="pn" style="font-family:'${p.font}'">${p.name}</span><span class="pd">${p.desc}</span></button>`).join('') +
+    '</div></section>' +
+    '<section><h3>Fuente</h3><div class="fonts">' +
+      FONTS.map((f) => `<button type="button" class="font-opt" data-font="${f.id}" style="font-family:'${f.id}'"><span class="aa">Aa</span><span class="fn">${f.id}</span><span class="fd">${f.note}</span></button>`).join('') +
+    '</div>' +
+    '<label class="range">Tamaño <input type="range" id="opt-size" data-key="size" min="13" max="24" step="0.5"><output id="out-size"></output></label>' +
+    '<label class="range">Interlineado <input type="range" id="opt-leading" data-key="leading" min="1.3" max="2.2" step="0.05"><output id="out-leading"></output></label>' +
+    '</section>' +
+    seg('dropcap', 'Letra capitular') + check('firstline', 'Primera línea en versalitas') + '</section>' +
+    seg('chapter', 'Títulos de capítulo') + check('chapterSpace', 'Espacio antes de cada capítulo') + '</section>' +
+    seg('level', 'Los capítulos se marcan con') +
+      '<p class="hint">En automático, si hay un solo # lo toma como título del libro y los capítulos pasan a ser ##.</p></section>' +
+    seg('para', 'Párrafos') + check('justify', 'Texto justificado') + '</section>' +
+    seg('page', 'Página') + check('folios', 'Números de página') +
+      (PAGES_OK ? '' : '<p class="note">Para ver páginas, actualizá Chrome o Edge a la última versión.</p>') + '</section>';
+
+  const body = $('drawerBody');
+  body.addEventListener('click', (e) => {
+    const p = e.target.closest('[data-preset]');
+    if (p) { style = { ...style, ...presetValues(PRESETS[p.dataset.preset]), preset: p.dataset.preset }; return refreshStyle(); }
+    const f = e.target.closest('[data-font]');
+    if (f) { style.font = f.dataset.font; style.preset = null; return refreshStyle(); }
+    const b = e.target.closest('.seg button');
+    if (b) { style[b.parentElement.dataset.key] = b.dataset.val; if (!['page', 'level'].includes(b.parentElement.dataset.key)) style.preset = null; refreshStyle(); }
+  });
+  body.addEventListener('input', (e) => {
+    const k = e.target.dataset.key;
+    if (!k) return;
+    style[k] = e.target.type === 'checkbox' ? e.target.checked : parseFloat(e.target.value);
+    if (k !== 'folios') style.preset = null;
+    refreshStyle();
+  });
+  syncDrawer();
+}
+function syncDrawer() {
+  const body = $('drawerBody');
+  body.querySelectorAll('[data-preset]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.preset === style.preset));
+  body.querySelectorAll('[data-font]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.font === style.font));
+  body.querySelectorAll('.seg').forEach((s) => s.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.val === style[s.dataset.key])));
+  body.querySelectorAll('input[data-key]').forEach((i) => { if (i.type === 'checkbox') i.checked = !!style[i.dataset.key]; else i.value = style[i.dataset.key]; });
+  $('out-size').textContent = style.size + ' px';
+  $('out-leading').textContent = Number(style.leading).toFixed(2);
+}
+function refreshStyle() { applyStyle(); syncDrawer(); }
+function toggleStyle() {
+  const d = $('drawer');
+  d.hidden = !d.hidden;
+  $('styleBtn').setAttribute('aria-pressed', !d.hidden);
+  document.body.classList.toggle('drawer-open', !d.hidden);
+}
+
+/* ---------- Editor ---------- */
+function initEditor() {
+  return new Promise((resolve) => {
+    state.editor = new Vditor('editor', {
+      cdn: 'vendor/vditor',
+      mode: 'ir',
+      lang: 'es_ES',
+      icon: 'ant',
+      height: 'auto',
+      value: WELCOME,
+      placeholder: 'Empezá a escribir…',
+      toolbarConfig: { hide: true },
+      cache: { enable: false },
+      counter: { enable: false },
+      preview: {
+        theme: { current: 'light', path: 'vendor/vditor/dist/css/content-theme' },
+        hljs: { style: 'github', lineNumber: false },
+      },
+      input: onInput,
+      after: resolve,
+    });
+  });
+}
+
+function onInput() {
+  if (state.loading) return;
+  state.dirty = true;
+  setSaveState(state.file ? 'Sin guardar' : 'Sin archivo · Ctrl+S para guardar');
+  clearTimeout(onInput.timer);
+  if (state.file) onInput.timer = setTimeout(save, 900);
+  clearTimeout(onInput.outline); onInput.outline = setTimeout(renderOutline, 300);
+}
+
+function editorRoot() { return document.querySelector('#editor .vditor-ir pre.vditor-reset'); }
+
+function setText(md) {
+  state.loading = true;
+  state.editor.setValue(md, true);
+  state.loading = false;
+  state.dirty = false;
+  renderOutline();
+  desk.scrollTop = 0;
+}
+
+/* ---------- Archivos ---------- */
+async function save() {
+  clearTimeout(onInput.timer);
+  if (!state.file) return saveAs();
+  if (!state.dirty) return;
+  const text = state.editor.getValue();
+  try {
+    setSaveState('Guardando…');
+    const w = await state.file.handle.createWritable();
+    await w.write(text);
+    await w.close();
+    if (state.editor.getValue() === text) { state.dirty = false; setSaveState('Guardado'); }
+  } catch (e) {
+    setSaveState('No se pudo guardar');
+    toast('No se pudo guardar: ' + (e.message || e.name));
+  }
+}
+
+async function saveAs() {
+  if (!('showSaveFilePicker' in window)) { toast('Este navegador no puede guardar archivos. Usá Chrome o Edge.'); return; }
+  try {
+    const handle = await showSaveFilePicker({
+      suggestedName: 'sin-titulo.md',
+      types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }],
+    });
+    state.file = { handle, path: handle.name };
+    state.dirty = true;
+    await save();
+    showDocName();
+    if (state.root) refreshDir(state.root, tree.querySelector('li[data-path=""] > ul'), '');
+  } catch (e) { if (e.name !== 'AbortError') toast('No se pudo guardar: ' + e.message); }
+}
+
+async function openFile(handle, path) {
+  if (state.dirty && state.file) await save();
+  try {
+    const text = await (await handle.getFile()).text();
+    state.file = { handle, path };
+    setText(text);
+    showDocName();
+    setSaveState('Guardado');
+    setPref('lastFile', path);
+    markActive();
+    if (innerWidth <= 640) shell.classList.add('no-side');
+    focusEditor();
+  } catch (e) {
+    toast('No se pudo abrir el archivo: ' + e.message);
+  }
+}
+
+function showDocName() {
+  const name = state.file ? state.file.path : '';
+  $('docName').textContent = name;
+  document.title = state.file ? state.file.handle.name.replace(/\.(md|markdown|txt)$/i, '') + ' — Capital' : 'Capital';
+}
+
+function focusEditor() {
+  const el = editorRoot();
+  if (el) el.focus({ preventScroll: true });
+}
+
+/* ---------- Árbol de carpetas ---------- */
+async function countTexts(dir) {
+  let n = 0;
+  try { for await (const h of dir.values()) if (h.kind === 'file' && /\.(md|markdown|txt)$/i.test(h.name)) n++; } catch (e) {}
+  return n;
+}
+
+async function listDir(dir) {
+  const items = [];
+  for await (const handle of dir.values()) {
+    if (handle.name.startsWith('.')) continue;
+    if (handle.kind === 'directory' || /\.(md|markdown|txt)$/i.test(handle.name)) items.push(handle);
+  }
+  return items.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'directory' ? -1 : 1)
+    || a.name.localeCompare(b.name, 'es', { numeric: true, sensitivity: 'base' }));
+}
+
+function dirItem(handle, path, isRoot) {
+  const li = document.createElement('li');
+  li.dataset.path = path;
+  li.setAttribute('role', 'treeitem');
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'row dir';
+  row.innerHTML = '<span class="caret">›</span><span class="label"></span><span class="count"></span>';
+  row.querySelector('.label').textContent = handle.name;
+  if (!isRoot) countTexts(handle).then((n) => { row.querySelector('.count').textContent = n ? n : ''; });
+  const ul = document.createElement('ul');
+  ul.setAttribute('role', 'group');
+  li.append(row, ul);
+  row.addEventListener('click', async () => {
+    setTarget(handle, ul, path, row);
+    if (isRoot) return;
+    const open = !li.classList.contains('open');
+    li.classList.toggle('open', open);
+    open ? state.openDirs.add(path) : state.openDirs.delete(path);
+    setPref('openDirs', [...state.openDirs]);
+    if (open) await refreshDir(handle, ul, path);
+    else ul.innerHTML = '';
+  });
+  return li;
+}
+
+function fileItem(handle, path) {
+  const li = document.createElement('li');
+  li.dataset.path = path;
+  li.setAttribute('role', 'treeitem');
+  const row = document.createElement('button');
+  row.type = 'button';
+  row.className = 'row file';
+  row.innerHTML = '<span class="label"></span>';
+  row.querySelector('.label').textContent = handle.name.replace(/\.(md|markdown)$/i, '');
+  row.title = handle.name;
+  row.addEventListener('click', () => openFile(handle, path));
+  li.append(row);
+  return li;
+}
+
+async function refreshDir(dir, ul, path) {
+  if (!ul) return;
+  const items = await listDir(dir);
+  ul.innerHTML = '';
+  for (const h of items) {
+    const p = path ? path + '/' + h.name : h.name;
+    if (h.kind === 'directory') {
+      const li = dirItem(h, p, false);
+      ul.append(li);
+      if (state.openDirs.has(p)) { li.classList.add('open'); await refreshDir(h, li.querySelector('ul'), p); }
+    } else {
+      ul.append(fileItem(h, p));
+    }
+  }
+  markActive();
+}
+
+function setTarget(handle, ul, path, row) {
+  state.target = { handle, ul, path };
+  tree.querySelectorAll('.row.target').forEach((r) => r.classList.remove('target'));
+  if (row) row.classList.add('target');
+}
+
+function markActive() {
+  tree.querySelectorAll('.row.file').forEach((r) => {
+    r.classList.toggle('active', !!state.file && r.parentElement.dataset.path === state.file.path);
+  });
+}
+
+async function mountRoot(handle) {
+  state.root = handle;
+  $('sideTitle').textContent = handle.name;
+  state.openDirs = new Set(pref('openDirs', []));
+  $('treeEmpty').hidden = true;
+  $('sideFoot').hidden = false;
+  tree.innerHTML = '';
+  const li = dirItem(handle, '', true);
+  li.classList.add('open');
+  tree.append(li);
+  const ul = li.querySelector('ul');
+  setTarget(handle, ul, '', li.querySelector('.row'));
+  await refreshDir(handle, ul, '');
+  const last = pref('lastFile', null);
+  if (last) {
+    const h = await resolvePath(handle, last).catch(() => null);
+    if (h) await openFile(h, last);
+  }
+}
+
+async function resolvePath(root, path) {
+  const parts = path.split('/');
+  let dir = root;
+  for (const part of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(part);
+  return dir.getFileHandle(parts[parts.length - 1]);
+}
+
+async function openFolder() {
+  if (!FS_OK) { toast('Este navegador no puede abrir carpetas. Usá Chrome o Edge.'); return; }
+  try {
+    const handle = await showDirectoryPicker({ id: 'tinta', mode: 'readwrite' });
+    if (state.dirty && state.file) await save();
+    state.file = null;
+    setPref('lastFile', null);
+    setPref('openDirs', []);
+    await kv('root', handle).catch(() => {});
+    await mountRoot(handle);
+  } catch (e) { if (e.name !== 'AbortError') toast('No se pudo abrir la carpeta: ' + e.message); }
+}
+
+async function openOneFile() {
+  if (!('showOpenFilePicker' in window)) { toast('Este navegador no puede abrir archivos. Usá Chrome o Edge.'); return; }
+  try {
+    const [handle] = await showOpenFilePicker({
+      id: 'tinta-file',
+      types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md', '.markdown', '.txt'] } }],
+    });
+    await openFile(handle, handle.name);
+  } catch (e) { if (e.name !== 'AbortError') toast('No se pudo abrir el archivo: ' + e.message); }
+}
+
+async function restoreRoot() {
+  if (!FS_OK) {
+    $('treeEmpty').querySelector('p').textContent = 'Este navegador no permite abrir carpetas. Usá Chrome o Edge.';
+    $('openFolderBtn').hidden = true;
+    return;
+  }
+  const handle = await kv('root').catch(() => null);
+  if (!handle) return;
+  const perm = await handle.queryPermission({ mode: 'readwrite' });
+  if (perm === 'granted') return mountRoot(handle);
+  const btn = $('reopenBtn');
+  btn.textContent = 'Seguir en «' + handle.name + '»';
+  btn.hidden = false;
+  btn.onclick = async () => {
+    if (await handle.requestPermission({ mode: 'readwrite' }) === 'granted') mountRoot(handle);
+  };
+}
+
+/* Nuevo archivo / carpeta: campo de texto dentro del árbol */
+function askName(kind) {
+  if (!state.root) { openFolder(); return; }
+  const target = state.target || { handle: state.root, ul: tree.querySelector('li[data-path=""] > ul'), path: '' };
+  const li = target.ul.closest('li');
+  if (li && !li.classList.contains('open')) li.querySelector('.row').click();
+  const input = document.createElement('input');
+  input.className = 'new-input';
+  input.placeholder = kind === 'file' ? 'Nombre del archivo' : 'Nombre de la carpeta';
+  target.ul.prepend(input);
+  input.focus();
+  let done = false;
+  const finish = async (ok) => {
+    if (done) return; done = true;
+    const name = input.value.trim().replace(/[\\/:*?"<>|]/g, '-');
+    input.remove();
+    if (!ok || !name) return;
+    try {
+      if (kind === 'file') {
+        const fname = /\.(md|markdown|txt)$/i.test(name) ? name : name + '.md';
+        if (await target.handle.getFileHandle(fname).then(() => true, () => false)) { toast('Ya existe un archivo con ese nombre'); return; }
+        const h = await target.handle.getFileHandle(fname, { create: true });
+        await refreshDir(target.handle, target.ul, target.path);
+        await openFile(h, target.path ? target.path + '/' + fname : fname);
+        setText('');
+        focusEditor();
+      } else {
+        await target.handle.getDirectoryHandle(name, { create: true });
+        await refreshDir(target.handle, target.ul, target.path);
+      }
+    } catch (e) { toast('No se pudo crear: ' + e.message); }
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    if (e.key === 'Escape') finish(false);
+  });
+  input.addEventListener('blur', () => finish(true));
+}
+
+/* ---------- Índice ---------- */
+function renderOutline() {
+  const list = $('outline');
+  list.innerHTML = '';
+  const root = editorRoot();
+  const hs = root ? [...root.querySelectorAll(':scope > h1, :scope > h2, :scope > h3')] : [];
+  for (const h of hs) {
+    const copy = h.cloneNode(true);
+    copy.querySelectorAll('.vditor-ir__marker').forEach((m) => m.remove());
+    const text = copy.textContent.trim();
+    if (!text) continue;
+    const li = document.createElement('li');
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'toc ' + h.tagName.toLowerCase();
+    b.innerHTML = '<span class="t"></span><span class="dots"></span><span class="pg"></span>';
+    b.querySelector('.t').textContent = text;
+    b.title = text;
+    const pg = pageOf(h);
+    if (pg) b.querySelector('.pg').textContent = pg;
+    else b.querySelector('.dots').hidden = true;
+    b.onclick = () => h.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    li.append(b);
+    list.append(li);
+  }
+  if (!list.children.length) list.innerHTML = '<li class="none">Los capítulos que escribas con # aparecen acá.</li>';
+}
+
+function showTab(which) {
+  const files = which === 'files';
+  $('tabFiles').setAttribute('aria-selected', files);
+  $('tabOutline').setAttribute('aria-selected', !files);
+  $('panelFiles').hidden = !files;
+  $('panelOutline').hidden = files;
+  shell.classList.remove('no-side');
+  setPref('tab', which);
+}
+
+/* ---------- Modo concentración ---------- */
+function markCurrentBlock() {
+  const root = editorRoot();
+  if (!root || !shell.classList.contains('focus')) return;
+  const sel = getSelection();
+  let node = sel.rangeCount ? sel.getRangeAt(0).startContainer : null;
+  while (node && node.parentNode !== root) node = node.parentNode;
+  root.querySelectorAll('[data-tinta-current]').forEach((el) => { if (el !== node) el.removeAttribute('data-tinta-current'); });
+  if (node && node.nodeType === 1) node.setAttribute('data-tinta-current', '');
+}
+function toggleFocus() {
+  const on = shell.classList.toggle('focus');
+  if (!on) editorRoot()?.querySelectorAll('[data-tinta-current]').forEach((el) => el.removeAttribute('data-tinta-current'));
+  else markCurrentBlock();
+  setPref('focus', on);
+}
+
+/* ---------- Menús y atajos ---------- */
+const COMMANDS = {
+  openFolder,
+  openOneFile,
+  newFile: () => askName('file'),
+  newFolder: () => askName('folder'),
+  save,
+  toggleSidebar: () => { shell.classList.toggle('no-side'); setPref('side', !shell.classList.contains('no-side')); },
+  showFiles: () => showTab('files'),
+  showOutline: () => showTab('outline'),
+  focusMode: toggleFocus,
+  toggleStyle,
+};
+
+document.querySelectorAll('[data-cmd]').forEach((b) => b.addEventListener('click', () => {
+  closeMenus();
+  COMMANDS[b.dataset.cmd]();
+}));
+
+function closeMenus() { document.querySelectorAll('.menu.open').forEach((m) => m.classList.remove('open')); }
+document.querySelectorAll('.menu-btn').forEach((btn) => {
+  const menu = btn.parentElement;
+  btn.addEventListener('click', (e) => { e.stopPropagation(); const was = menu.classList.contains('open'); closeMenus(); menu.classList.toggle('open', !was); });
+  btn.addEventListener('mouseenter', () => { if (document.querySelector('.menu.open') && !menu.classList.contains('open')) { closeMenus(); menu.classList.add('open'); } });
+});
+document.addEventListener('click', (e) => { if (!e.target.closest('.menu')) closeMenus(); });
+
+window.addEventListener('keydown', (e) => {
+  const mod = e.ctrlKey || e.metaKey;
+  const k = e.key.toLowerCase();
+  if (e.key === 'Escape') closeMenus();
+  if (mod && !e.shiftKey && k === 's') { e.preventDefault(); save(); }
+  else if (mod && !e.shiftKey && k === 'n') { e.preventDefault(); askName('file'); }
+  else if (mod && !e.shiftKey && k === 'o') { e.preventDefault(); openOneFile(); }
+  else if (mod && e.shiftKey && k === 'l') { e.preventDefault(); COMMANDS.toggleSidebar(); }
+  else if (e.key === 'F8') { e.preventDefault(); toggleFocus(); }
+}, true);
+
+$('tabFiles').onclick = () => showTab('files');
+$('tabOutline').onclick = () => showTab('outline');
+$('openFolderBtn').onclick = openFolder;
+$('openFileBtn').onclick = openOneFile;
+document.addEventListener('selectionchange', markCurrentBlock);
+document.addEventListener('visibilitychange', () => { if (document.hidden && state.dirty && state.file) save(); });
+window.addEventListener('beforeunload', (e) => { if (state.dirty) { save(); e.preventDefault(); } });
+
+/* ---------- Arranque ---------- */
+(async function start() {
+  if (pref('side', true) === false) shell.classList.add('no-side');
+  if (pref('focus', false)) shell.classList.add('focus');
+  if (pref('tab', 'files') === 'outline') showTab('outline');
+  setSaveState('');
+  style = { ...STYLE_DEFAULTS, ...pref('style', {}) };
+  state.zoom = pref('zoom', 1);
+  $('zoomRange').addEventListener('input', (e) => setZoom(e.target.value / 100));
+  $('zoomMinus').onclick = () => setZoom(state.zoom - 0.1);
+  $('zoomPlus').onclick = () => setZoom(state.zoom + 0.1);
+  $('zoomOut').onclick = () => setZoom(1);
+  $('zoomRange').value = Math.round(state.zoom * 100);
+  $('zoomOut').textContent = Math.round(state.zoom * 100) + ' %';
+  buildDrawer();
+  applyStyle();
+  await initEditor();
+  layout();
+  new ResizeObserver(() => paginate()).observe(editorRoot());
+  // El ancho del escritorio cambia al mostrar u ocultar la barra lateral o al cambiar la ventana
+  let lastDeskW = 0;
+  new ResizeObserver(() => { if (desk.clientWidth && desk.clientWidth !== lastDeskW) { lastDeskW = desk.clientWidth; layout(); } }).observe(desk);
+  document.fonts.addEventListener('loadingdone', paginate);
+  await restoreRoot().catch((e) => console.warn(e));
+
+  // Abrir un .md con doble clic cuando la app está instalada
+  if ('launchQueue' in window) {
+    launchQueue.setConsumer(async (params) => {
+      const h = params.files && params.files[0];
+      if (h) await openFile(h, h.name);
+    });
+  }
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+})();
