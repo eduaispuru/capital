@@ -872,5 +872,32 @@ window.addEventListener('beforeunload', (e) => { if (state.dirty) { save(); e.pr
       if (h) await openFile(h, h.name);
     });
   }
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  watchUpdates();
 })();
+
+/* ---------- Actualizaciones ---------- */
+// Busca una versión nueva al abrir la app y cada vez que vuelve a primer plano.
+// Cuando llega, avisa con una barra; al aceptar, guarda y recarga.
+function watchUpdates() {
+  if (!('serviceWorker' in navigator)) return;
+  const hadController = !!navigator.serviceWorker.controller;
+  // La versión visible en Ayuda sale del nombre de la caché que arma sw.js
+  const showVersion = () => caches.keys().then((keys) => {
+    const v = keys.map((k) => k.match(/^capital-v(\d+)$/)).filter(Boolean).map((m) => +m[1]).sort((a, b) => b - a)[0];
+    if (v) $('appVersion').textContent = 'Versión ' + v;
+  }).catch(() => {});
+  showVersion();
+  navigator.serviceWorker.addEventListener('controllerchange', showVersion);
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
+    const check = () => reg.update().catch(() => {});
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+    setInterval(check, 30 * 60 * 1000);
+  }).catch(() => {});
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (hadController) $('updateBar').hidden = false;
+  });
+  $('updateBtn').onclick = async () => {
+    if (state.dirty && state.file) await save();
+    location.reload();
+  };
+}

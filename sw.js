@@ -1,6 +1,6 @@
 // Guarda la app en caché para que funcione sin conexión.
 // Al cambiar archivos de la app, subí VERSION para que se actualice.
-const VERSION = 'capital-v9';
+const VERSION = 'capital-v10';
 const CORE = [
   './',
   'index.html',
@@ -19,7 +19,10 @@ const CORE = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(CORE)).then(() => self.skipWaiting()));
+  // cache: 'reload' saltea la caché HTTP de GitHub (10 minutos) para guardar los archivos nuevos
+  e.waitUntil(caches.open(VERSION)
+    .then((c) => c.addAll(CORE.map((u) => new Request(u, { cache: 'reload' }))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -31,11 +34,12 @@ self.addEventListener('activate', (e) => {
 });
 
 // Primero la red (para recibir actualizaciones); si no hay conexión, la caché.
+// cache: 'no-cache' le pregunta siempre a GitHub si el archivo cambió (si no cambió, responde rápido y sin volver a bajarlo).
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
   e.respondWith(
-    fetch(req)
+    fetch(req, { cache: 'no-cache' })
       .then((res) => {
         if (res.ok) { const copy = res.clone(); caches.open(VERSION).then((c) => c.put(req, copy)); }
         return res;

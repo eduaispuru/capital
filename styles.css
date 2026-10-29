@@ -57,6 +57,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .menu-list hr { border: 0; border-top: 1px solid var(--side-line); margin: 4px 6px; }
 .menu-help { padding: 8px 12px; min-width: 320px; }
 .menu-help p { margin: 4px 0; }
+.menu-help .version { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--side-line); color: var(--ink-faint); font-size: 12px; }
 .doc-name { margin-left: auto; color: #b7b1a6; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .save-state { margin: 0 8px 0 12px; color: #8f897f; white-space: nowrap; }
 
@@ -334,6 +335,15 @@ body[data-source="yes"] .book::before {
 
 /* Con el panel abierto, el escritorio se corre para seguir viendo la página */
 @media (min-width: 1300px) { body.drawer-open .shell { margin-right: min(380px, 100vw); } }
+
+.update-bar {
+  position: fixed; left: 50%; top: 40px; transform: translateX(-50%); z-index: 45;
+  display: flex; align-items: center; gap: 14px; padding: 8px 10px 8px 18px;
+  background: var(--chrome); color: var(--chrome-fg); border-radius: 999px;
+  font: 14px var(--font-side); box-shadow: 0 8px 24px -8px rgb(0 0 0 / .4);
+}
+.update-bar button { background: var(--ribbon); color: #fff; border-radius: 999px; padding: 4px 14px; font: 600 13px var(--ui); }
+.update-bar button:hover { filter: brightness(1.1); }
 
 .toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: var(--chrome); color: var(--chrome-fg); font: 13px var(--ui); padding: 8px 14px; border-radius: 6px; z-index: 40; }
 

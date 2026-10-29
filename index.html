@@ -50,6 +50,7 @@
       <p><b>Ctrl+B</b> negrita · <b>Ctrl+I</b> cursiva</p>
       <p><b>&gt;</b> espacio → cita</p>
       <p>Se guarda solo mientras escribís.</p>
+      <p class="version" id="appVersion"></p>
     </div>
   </div>
   <span class="doc-name" id="docName"></span>
@@ -116,6 +117,11 @@
   <button type="button" class="zoom-hide" data-cmd="toggleZoomBar" title="Ocultar (volver a mostrar desde Visualización)" aria-label="Ocultar barra de zoom">×</button>
 </div>
 <style id="printPage"></style>
+
+<div class="update-bar" id="updateBar" role="status" hidden>
+  <span>Hay una versión nueva de Capital.</span>
+  <button type="button" id="updateBtn">Actualizar</button>
+</div>
 
 <div class="toast" id="toast" role="status" hidden></div>
 
