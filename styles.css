@@ -126,14 +126,22 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .side-foot button:hover { color: var(--ribbon); }
 
 /* Índice como página de contenidos */
-.outline { list-style: none; margin: 0; padding: 0; counter-reset: none; }
-.toc { display: flex; align-items: baseline; gap: 6px; width: 100%; text-align: left; padding: 5px 0; font: 16.5px/1.3 var(--font-side); color: var(--ink); }
+.outline, .outline ol { list-style: none; margin: 0; padding: 0; }
+.outline ol { padding-left: 14px; }
+.toc-item.closed > ol { display: none; }
+.toc-row { display: flex; align-items: baseline; gap: 2px; }
+.toc-caret { width: 14px; flex: none; font: 14px var(--font-side); color: var(--ink-faint); transition: transform .15s; padding: 0; line-height: 1; }
+.toc-caret:not(:disabled) { transform: rotate(90deg); }
+.toc-item.closed > .toc-row .toc-caret { transform: none; }
+.toc-caret:not(:disabled):hover { color: var(--ribbon); }
+.toc-caret:disabled { cursor: default; }
+.toc { display: flex; align-items: baseline; gap: 6px; flex: 1; min-width: 0; text-align: left; padding: 5px 0; font: 16.5px/1.3 var(--font-side); color: var(--ink); }
 .toc:hover { color: var(--ribbon); }
 .toc .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .toc .dots { flex: 1; min-width: 12px; border-bottom: 1px dotted var(--ink-faint); transform: translateY(-4px); }
 .toc .pg { font-variant-numeric: oldstyle-nums tabular-nums; color: var(--ink-soft); }
-.toc.h2 { padding-left: 16px; font-style: italic; font-size: 15.5px; color: var(--ink-soft); }
-.toc.h3 { padding-left: 30px; font-size: 14.5px; color: var(--ink-soft); }
+.depth-1 > .toc-row .toc { font-style: italic; font-size: 15.5px; color: var(--ink-soft); }
+.depth-2 > .toc-row .toc { font-size: 14.5px; color: var(--ink-soft); }
 .outline .none { color: var(--ink-faint); font: italic 15px var(--font-side); padding: 8px 0; }
 
 /* ---------- Escritorio y páginas ---------- */
@@ -226,6 +234,13 @@ body[data-firstline="yes"]:is([data-dropcap="clasica"], [data-dropcap="ornamenta
 .vditor-reset blockquote { border-left: 0 !important; color: var(--ink-soft) !important; font-style: italic; margin: 1em 1.5em !important; padding: 0 !important; }
 .vditor-reset blockquote p + p { text-indent: 0 !important; }
 .vditor-reset ul, .vditor-reset ol { margin: .5em 0 !important; }
+/* Estilos de lista */
+@counter-style capital-paren { system: extends decimal; suffix: ") "; }
+body[data-ol="paren"] .vditor-reset ol { list-style-type: capital-paren !important; }
+body[data-ol="alpha"] .vditor-reset ol { list-style-type: lower-alpha !important; }
+body[data-ol="roman"] .vditor-reset ol { list-style-type: lower-roman !important; }
+body[data-ul="dash"] .vditor-reset ul { list-style-type: "— " !important; }
+body[data-ul="circle"] .vditor-reset ul { list-style-type: circle !important; }
 .vditor-reset a { color: var(--ink) !important; text-decoration: underline; text-decoration-color: var(--ink-faint); }
 .vditor-reset code:not(.hljs):not(.highlight-chroma) { background: #efebe3 !important; font-size: 85% !important; }
 .vditor-reset pre > code { background: #f1eee8 !important; }

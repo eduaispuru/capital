@@ -17,7 +17,7 @@ Un numeral y un espacio al principio de la línea crean un capítulo, que siempr
 
 const $ = (id) => document.getElementById(id);
 const shell = $('shell'), desk = $('desk'), tree = $('tree'), book = $('book'), pagesEl = $('pages');
-const state = { editor: null, root: null, file: null, target: null, dirty: false, loading: false, openDirs: new Set(), step: 0 };
+const state = { editor: null, root: null, file: null, target: null, dirty: false, loading: false, openDirs: new Set(), step: 0, tocClosed: new Set() };
 const FS_OK = 'showDirectoryPicker' in window;
 const PAGES_OK = CSS.supports('column-wrap', 'wrap') && CSS.supports('column-height', '1px');
 
@@ -38,6 +38,8 @@ const OPTIONS = {
   dropLines: [['2', '2 líneas'], ['3', '3 líneas'], ['4', '4 líneas']],
   chapter: [['versalitas', 'Versalitas'], ['ornamento', 'Con ornamento'], ['cursiva', 'Cursiva'], ['moderno', 'Moderno']],
   level: [['auto', 'Automático'], ['1', '#'], ['2', '##']],
+  olStyle: [['decimal', '1.'], ['paren', '1)'], ['alpha', 'a.'], ['roman', 'i.']],
+  ulStyle: [['disc', '•'], ['dash', '—'], ['circle', '◦']],
   para: [['sangria', 'Sangría'], ['amplia', 'Sangría amplia'], ['espacio', 'Espacio entre párrafos']],
   page: [['a5', 'Novela A5'], ['6x9', '6 × 9 in'], ['a4', 'A4'], ['continuo', 'Sin páginas']],
 };
@@ -50,7 +52,7 @@ const PRESETS = {
 const PAGE_SIZES = { a5: [148, 210], '6x9': [152.4, 228.6], a4: [210, 297] };
 const STYLE_KEYS = ['font', 'size', 'leading', 'dropcap', 'firstline', 'chapter', 'para', 'justify'];
 const presetValues = (p) => Object.fromEntries(STYLE_KEYS.map((k) => [k, p[k]]));
-const STYLE_DEFAULTS = { preset: 'tinta', ...presetValues(PRESETS.tinta), page: 'a5', folios: true, chapterSpace: true, level: 'auto', dropLines: '3' };
+const STYLE_DEFAULTS = { preset: 'tinta', ...presetValues(PRESETS.tinta), page: 'a5', folios: true, chapterSpace: true, level: 'auto', dropLines: '3', olStyle: 'decimal', ulStyle: 'disc' };
 let style = { ...STYLE_DEFAULTS };
 
 /* ---------- Guardado de preferencias ---------- */
@@ -100,6 +102,8 @@ function applyStyle() {
   d.firstline = style.firstline ? 'yes' : 'no';
   d.folios = style.folios ? 'yes' : 'no';
   d.chapterSpace = style.chapterSpace ? 'yes' : 'no';
+  d.ol = style.olStyle;
+  d.ul = style.ulStyle;
   setPref('style', style);
   layout();
 }
@@ -243,6 +247,9 @@ function buildDrawer() {
     seg('level', 'Los capítulos se marcan con') +
       '<p class="hint">En automático, si hay un solo # lo toma como título del libro y los capítulos pasan a ser ##.</p></section>' +
     seg('para', 'Párrafos') + check('justify', 'Texto justificado') + '</section>' +
+    seg('olStyle', 'Listas numeradas') +
+      '<p class="hint">Escribí 1 y un espacio al principio de un párrafo para empezar una lista; con Enter sigue sola.</p></section>' +
+    seg('ulStyle', 'Viñetas') + '</section>' +
     seg('page', 'Página') + check('folios', 'Números de página') +
       (PAGES_OK ? '' : '<p class="note">Para ver páginas, actualizá Chrome o Edge a la última versión.</p>') + '</section>';
 
@@ -253,7 +260,7 @@ function buildDrawer() {
     const f = e.target.closest('[data-font]');
     if (f) { style.font = f.dataset.font; style.preset = null; return refreshStyle(); }
     const b = e.target.closest('.seg button');
-    if (b) { style[b.parentElement.dataset.key] = b.dataset.val; if (!['page', 'level', 'dropLines'].includes(b.parentElement.dataset.key)) style.preset = null; refreshStyle(); }
+    if (b) { style[b.parentElement.dataset.key] = b.dataset.val; if (!['page', 'level', 'dropLines', 'olStyle', 'ulStyle'].includes(b.parentElement.dataset.key)) style.preset = null; refreshStyle(); }
   });
   body.addEventListener('input', (e) => {
     const k = e.target.dataset.key;
@@ -619,31 +626,130 @@ function askName(kind) {
 }
 
 /* ---------- Índice ---------- */
+// Todos los niveles de # en familias: cada título agrupa a los de nivel más profundo que lo siguen
 function renderOutline() {
   const list = $('outline');
   list.innerHTML = '';
   const root = editorRoot();
-  const hs = root ? [...root.querySelectorAll(':scope > h1, :scope > h2, :scope > h3')] : [];
+  const hs = root ? [...root.querySelectorAll(':scope > :is(h1, h2, h3, h4, h5, h6)')] : [];
+  const top = { level: 0, children: [] };
+  const stack = [top];
   for (const h of hs) {
     const copy = h.cloneNode(true);
     copy.querySelectorAll('.vditor-ir__marker').forEach((m) => m.remove());
     const text = copy.textContent.trim();
     if (!text) continue;
-    const li = document.createElement('li');
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'toc ' + h.tagName.toLowerCase();
-    b.innerHTML = '<span class="t"></span><span class="dots"></span><span class="pg"></span>';
-    b.querySelector('.t').textContent = text;
-    b.title = text;
-    const pg = pageOf(h);
-    if (pg) b.querySelector('.pg').textContent = pg;
-    else b.querySelector('.dots').hidden = true;
-    b.onclick = () => h.scrollIntoView({ block: 'start', behavior: 'smooth' });
-    li.append(b);
-    list.append(li);
+    const item = { h, text, level: +h.tagName[1], children: [] };
+    while (stack[stack.length - 1].level >= item.level) stack.pop();
+    stack[stack.length - 1].children.push(item);
+    stack.push(item);
   }
-  if (!list.children.length) list.innerHTML = '<li class="none">Los capítulos que escribas con # aparecen acá.</li>';
+  if (!top.children.length) {
+    list.innerHTML = '<li class="none">Los capítulos que escribas con # aparecen acá.</li>';
+    return;
+  }
+  const build = (items, into, depth, parentKey) => {
+    for (const it of items) {
+      const key = parentKey + '/' + it.text;
+      const li = document.createElement('li');
+      li.className = 'toc-item depth-' + Math.min(depth, 2);
+      const row = document.createElement('div');
+      row.className = 'toc-row';
+      const caret = document.createElement('button');
+      caret.type = 'button';
+      caret.className = 'toc-caret';
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'toc';
+      b.innerHTML = '<span class="t"></span><span class="dots"></span><span class="pg"></span>';
+      b.querySelector('.t').textContent = it.text;
+      b.title = it.text;
+      const pg = pageOf(it.h);
+      if (pg) b.querySelector('.pg').textContent = pg;
+      else b.querySelector('.dots').hidden = true;
+      b.onclick = () => it.h.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      row.append(caret, b);
+      li.append(row);
+      if (it.children.length) {
+        const sub = document.createElement('ol');
+        build(it.children, sub, depth + 1, key);
+        li.append(sub);
+        const closed = state.tocClosed.has(key);
+        li.classList.toggle('closed', closed);
+        caret.textContent = '›';
+        caret.setAttribute('aria-expanded', !closed);
+        caret.setAttribute('aria-label', closed ? 'Desplegar' : 'Plegar');
+        caret.onclick = () => {
+          const now = !li.classList.contains('closed');
+          li.classList.toggle('closed', now);
+          caret.setAttribute('aria-expanded', !now);
+          caret.setAttribute('aria-label', now ? 'Desplegar' : 'Plegar');
+          now ? state.tocClosed.add(key) : state.tocClosed.delete(key);
+        };
+      } else {
+        caret.tabIndex = -1;
+        caret.disabled = true;
+      }
+      into.append(li);
+    }
+  };
+  build(top.children, list, 0, '');
+}
+
+/* ---------- Tipografía al escribir: « », guion de diálogo y listas ---------- */
+// Devuelve [caracteres a borrar antes del cursor, texto a insertar] o null.
+// `before` es el texto del bloque (o de la línea, en código fuente) antes del cursor.
+function smartTyping(before, ch, isParagraph) {
+  if (ch === '<' && before.endsWith('<')) return [1, '«'];
+  // ">" solo al principio de la línea es una cita; ">>" ahí sigue siendo cita anidada
+  if (ch === '>' && before.endsWith('>') && before.trim() !== '>') return [1, '»'];
+  // Dentro de una frase, el tercer guion ya es raya
+  if (ch === '-' && before.endsWith('--') && before.length > 2) return [2, '—'];
+  // Al principio de la línea "---" sigue siendo salto de página hasta que se escribe otra cosa
+  if (ch !== '-' && before === '---') return [3, '—' + ch];
+  // "1" y espacio al principio de un párrafo empieza una lista numerada
+  if (ch === ' ' && before === '1' && isParagraph) return [0, '. '];
+  return null;
+}
+
+function onEditorBeforeInput(e) {
+  if (e.inputType !== 'insertText' || !e.data || e.data.length !== 1 || e.isComposing) return;
+  const sel = getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed) return;
+  const caret = sel.getRangeAt(0);
+  const node = caret.startContainer;
+  const block = (node.nodeType === 1 ? node : node.parentElement).closest('p, li, h1, h2, h3, h4, h5, h6, td, th');
+  if (!block || !editorRoot().contains(block)) return;
+  const pre = document.createRange();
+  pre.setStart(block, 0);
+  pre.setEnd(node, caret.startOffset);
+  const rule = smartTyping(pre.toString(), e.data, block.tagName === 'P');
+  if (!rule) return;
+  const [remove, insert] = rule;
+  // Solo si lo que hay que borrar está en el mismo nodo de texto
+  if (remove && (node.nodeType !== 3 || caret.startOffset < remove)) return;
+  e.preventDefault();
+  if (remove) {
+    const r = document.createRange();
+    r.setStart(node, caret.startOffset - remove);
+    r.setEnd(node, caret.startOffset);
+    sel.removeAllRanges();
+    sel.addRange(r);
+  }
+  document.execCommand('insertText', false, insert);
+}
+
+function onSourceBeforeInput(e) {
+  if (e.inputType !== 'insertText' || !e.data || e.data.length !== 1 || e.isComposing) return;
+  const ta = e.target;
+  if (ta.selectionStart !== ta.selectionEnd) return;
+  const pos = ta.selectionStart;
+  const before = ta.value.slice(ta.value.lastIndexOf('\n', pos - 1) + 1, pos);
+  const rule = smartTyping(before, e.data, true);
+  if (!rule) return;
+  e.preventDefault();
+  ta.setSelectionRange(pos - rule[0], pos);
+  document.execCommand('insertText', false, rule[1]);
 }
 
 function showTab(which) {
@@ -739,6 +845,8 @@ window.addEventListener('beforeunload', (e) => { if (state.dirty) { save(); e.pr
   $('zoomBar').hidden = pref('zoomBar', true) === false;
   document.body.dataset.source = 'no';
   $('source').addEventListener('input', () => { fitSource(); onInput(); });
+  $('source').addEventListener('beforeinput', onSourceBeforeInput);
+  $('editor').addEventListener('beforeinput', onEditorBeforeInput, true);
   $('source').addEventListener('keydown', (e) => {
     if (e.key !== 'Tab') return;
     e.preventDefault();
