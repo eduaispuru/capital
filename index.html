@@ -32,8 +32,9 @@
       <button type="button" role="menuitem" data-cmd="toggleSource">Código fuente<kbd>Ctrl+/</kbd></button>
       <button type="button" role="menuitem" data-cmd="toggleSpell" id="spellItem" class="toggle">Corrector ortográfico</button>
       <hr>
-      <button type="button" role="menuitem" data-cmd="toggleSidebar">Barra lateral<kbd>Ctrl+Shift+L</kbd></button>
-      <button type="button" role="menuitem" data-cmd="toggleZoomBar">Barra de zoom</button>
+      <button type="button" role="menuitem" data-cmd="toggleSidebar" id="sideItem" class="toggle">Barra lateral<kbd>Ctrl+Shift+L</kbd></button>
+      <button type="button" role="menuitem" data-cmd="toggleZoomBar" id="zoomItem" class="toggle">Barra de zoom</button>
+      <button type="button" role="menuitem" data-cmd="toggleStatus" id="statusItem" class="toggle">Barra inferior</button>
       <button type="button" role="menuitem" data-cmd="showFiles">Archivos</button>
       <button type="button" role="menuitem" data-cmd="showOutline">Índice</button>
       <hr>
@@ -102,6 +103,23 @@
   </main>
 </div>
 
+<footer class="statusbar" id="statusBar">
+  <button type="button" class="sb-btn" data-cmd="toggleSidebar" id="sideToggle" title="Mostrar u ocultar la barra lateral (Ctrl+Shift+L)" aria-label="Barra lateral">
+    <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M6 2.5v11"/></svg>
+  </button>
+  <div class="sb-left" id="sbLeft"></div>
+  <div class="sb-right" id="sbRight"></div>
+  <div class="sb-menu">
+    <button type="button" class="sb-btn" id="statsBtn" title="Elegir qué datos mostrar" aria-label="Elegir qué datos mostrar" aria-expanded="false">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/><circle cx="5" cy="4.5" r="1.4"/><circle cx="10.5" cy="8" r="1.4"/><circle cx="7" cy="11.5" r="1.4"/></svg>
+    </button>
+    <div class="sb-pop" id="statsPop" hidden></div>
+  </div>
+  <button type="button" class="sb-btn sb-zoom" data-cmd="toggleZoomBar" id="zoomToggle" title="Mostrar u ocultar la barra de zoom">
+    <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.3 10.3l3.7 3.7"/></svg><span id="zoomLabel">100 %</span>
+  </button>
+</footer>
+
 <aside class="drawer" id="drawer" aria-label="Estilo" hidden>
   <header class="drawer-head">
     <h2>Estilo</h2>
@@ -115,7 +133,7 @@
   <input type="range" id="zoomRange" min="50" max="200" step="5" aria-label="Zoom de la hoja">
   <button type="button" id="zoomPlus" aria-label="Acercar">+</button>
   <button type="button" id="zoomOut" class="zoom-val" title="Volver a 100 %">100 %</button>
-  <button type="button" class="zoom-hide" data-cmd="toggleZoomBar" title="Ocultar (volver a mostrar desde Visualización)" aria-label="Ocultar barra de zoom">×</button>
+  <button type="button" class="zoom-hide" data-cmd="toggleZoomBar" title="Ocultar (volver a mostrar con la lupa de abajo)" aria-label="Ocultar barra de zoom">×</button>
 </div>
 <style id="printPage"></style>
 

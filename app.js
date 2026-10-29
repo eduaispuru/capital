@@ -168,6 +168,7 @@ function paginate() {
     book.style.height = (n * state.step - state.gap) + 'px';
   }
   renderOutline();
+  schedulePosition();
 }
 
 // Página real para el PDF: mismo tamaño, márgenes y letra que en pantalla, en milímetros
@@ -209,7 +210,7 @@ function setZoom(z) {
   state.zoom = Math.round(Math.min(2, Math.max(0.5, z)) * 100) / 100;
   setPref('zoom', state.zoom);
   $('zoomRange').value = Math.round(state.zoom * 100);
-  $('zoomOut').textContent = Math.round(state.zoom * 100) + ' %';
+  $('zoomOut').textContent = $('zoomLabel').textContent = Math.round(state.zoom * 100) + ' %';
   const anchor = desk.scrollTop / Math.max(1, desk.scrollHeight);
   layout();
   desk.scrollTop = anchor * desk.scrollHeight;
@@ -319,6 +320,7 @@ function onInput() {
   clearTimeout(onInput.timer);
   if (state.file) onInput.timer = setTimeout(save, 900);
   clearTimeout(onInput.outline); onInput.outline = setTimeout(renderOutline, 300);
+  scheduleCounts();
 }
 
 function editorRoot() { return document.querySelector('#editor .vditor-ir pre.vditor-reset'); }
@@ -331,6 +333,9 @@ function setText(md) {
   if (state.source) { $('source').value = md; fitSource(); }
   renderOutline();
   desk.scrollTop = 0;
+  // "Palabras de esta sesión" cuenta desde que se abre el archivo
+  state.baseWords = null;
+  updateCounts();
 }
 
 // Texto actual, venga del editor visual o del código fuente
@@ -379,6 +384,8 @@ function toggleSource() {
     focusEditor();
   }
   desk.scrollTop = ratio * (desk.scrollHeight - desk.clientHeight);
+  updatePosition();
+  updateSelection();
 }
 
 /* ---------- Archivos ---------- */
@@ -424,7 +431,7 @@ async function openFile(handle, path) {
     setSaveState('Guardado');
     setPref('lastFile', path);
     markActive();
-    if (innerWidth <= 640) shell.classList.add('no-side');
+    if (innerWidth <= 640) { shell.classList.add('no-side'); syncBars(); }
     focusEditor();
   } catch (e) {
     toast('No se pudo abrir el archivo: ' + e.message);
@@ -764,6 +771,141 @@ function onSourceBeforeInput(e) {
   document.execCommand('insertText', false, rule[1]);
 }
 
+/* ---------- Barra inferior: palabras, páginas y otros datos ---------- */
+// Cada dato se puede mostrar u ocultar desde el botón de ajustes de la barra
+const STATS = [
+  { id: 'chapter', label: 'Capítulo actual', on: true, left: true },
+  { id: 'selection', label: 'Palabras seleccionadas', on: true },
+  { id: 'session', label: 'Palabras escritas en esta sesión', on: false },
+  { id: 'page', label: 'Página', on: true },
+  { id: 'words', label: 'Palabras', on: true },
+  { id: 'chars', label: 'Caracteres', on: false },
+  { id: 'paras', label: 'Párrafos', on: false },
+  { id: 'reading', label: 'Tiempo de lectura', on: true },
+];
+const WORD_RE = /[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu;
+const countWords = (s) => (s.match(WORD_RE) || []).length;
+const fmt = (n) => n.toLocaleString('es-AR');
+const plural = (n, one, many) => fmt(n) + ' ' + (n === 1 ? one : many);
+let statsOn = {};
+
+// El texto tal como se lee, sin las marcas de Markdown
+function plainText(md) {
+  return md
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/^[ \t]*(?:(?:#{1,6}|>|[-*+]|\d+[.)])[ \t]+)+/gm, '')
+    .replace(/^[ \t]*([-*_])(?:[ \t]*\1){2,}[ \t]*$/gm, '')
+    .replace(/[*_~`]/g, '');
+}
+
+function readingTime(words) {
+  const min = Math.round(words / 230);
+  if (min < 1) return words ? 'menos de 1 min de lectura' : '';
+  if (min < 60) return min + ' min de lectura';
+  return Math.floor(min / 60) + ' h ' + (min % 60 ? (min % 60) + ' min ' : '') + 'de lectura';
+}
+
+function setStat(id, text) {
+  const el = document.querySelector(`.sb-item[data-stat="${id}"]`);
+  if (!el) return;
+  el.textContent = text;
+  el.hidden = !statsOn[id] || !text;
+}
+
+function buildStatusBar() {
+  statsOn = Object.fromEntries(STATS.map((s) => [s.id, s.on]));
+  Object.assign(statsOn, pref('stats', {}));
+  for (const s of STATS) {
+    const el = document.createElement('span');
+    el.className = 'sb-item';
+    el.dataset.stat = s.id;
+    el.hidden = true;
+    $(s.left ? 'sbLeft' : 'sbRight').append(el);
+  }
+  const pop = $('statsPop');
+  pop.innerHTML = '<h4>Mostrar</h4>' + STATS.map((s) =>
+    `<label><input type="checkbox" data-stat="${s.id}"${statsOn[s.id] ? ' checked' : ''}> ${s.label}</label>`).join('');
+  pop.addEventListener('change', (e) => {
+    statsOn[e.target.dataset.stat] = e.target.checked;
+    setPref('stats', statsOn);
+    updateCounts(); updatePosition(); updateSelection();
+  });
+  const btn = $('statsBtn');
+  btn.onclick = (e) => { e.stopPropagation(); pop.hidden = !pop.hidden; btn.setAttribute('aria-expanded', !pop.hidden); };
+  document.addEventListener('click', (e) => {
+    if (!pop.hidden && !e.target.closest('.sb-menu')) { pop.hidden = true; btn.setAttribute('aria-expanded', false); }
+  });
+}
+
+// Palabras, caracteres y párrafos: se recalculan un rato después de dejar de escribir
+function updateCounts() {
+  if (!state.editor) return;
+  const md = currentText();
+  const text = plainText(md);
+  const words = countWords(text);
+  if (state.baseWords == null) state.baseWords = words;
+  const paras = md.split(/\n[ \t]*\n/).filter((b) => b.trim() && !/^[ \t]*(#{1,6}[ \t]|([-*_])(?:[ \t]*\2){2,}[ \t]*$)/.test(b.trim())).length;
+  const delta = words - state.baseWords;
+  setStat('words', plural(words, 'palabra', 'palabras'));
+  setStat('chars', plural([...text.replace(/\s*\n\s*/g, ' ').trim()].length, 'carácter', 'caracteres'));
+  setStat('paras', plural(paras, 'párrafo', 'párrafos'));
+  setStat('reading', readingTime(words));
+  setStat('session', delta ? (delta > 0 ? '+' : '−') + plural(Math.abs(delta), 'palabra', 'palabras') + ' en esta sesión' : '');
+}
+function scheduleCounts() { clearTimeout(scheduleCounts.timer); scheduleCounts.timer = setTimeout(updateCounts, 400); }
+
+// Página y capítulo que se están leyendo (a un tercio de la altura de la ventana)
+function updatePosition() {
+  const pre = editorRoot();
+  if (!pre || state.source) { setStat('page', ''); setStat('chapter', ''); return; }
+  const line = desk.getBoundingClientRect().top + desk.clientHeight / 3;
+  const total = pagesEl.children.length;
+  if (state.step && total) {
+    const n = Math.min(total, Math.max(1, Math.floor((line - pagesEl.getBoundingClientRect().top) / state.step) + 1));
+    setStat('page', `Página ${n} de ${total}`);
+  } else setStat('page', '');
+  let current = null;
+  for (const h of pre.querySelectorAll(`:scope > h${document.body.dataset.level || 1}`)) {
+    if (h.getBoundingClientRect().top > line) break;
+    current = h;
+  }
+  let title = '';
+  if (current) {
+    const copy = current.cloneNode(true);
+    copy.querySelectorAll('.vditor-ir__marker').forEach((m) => m.remove());
+    title = copy.textContent.trim();
+  }
+  setStat('chapter', title);
+}
+function schedulePosition() {
+  if (schedulePosition.frame) return;
+  schedulePosition.frame = requestAnimationFrame(() => { schedulePosition.frame = 0; updatePosition(); });
+}
+
+function updateSelection() {
+  let text = '';
+  const ta = $('source');
+  if (state.source) text = ta.value.slice(ta.selectionStart, ta.selectionEnd);
+  else {
+    const sel = getSelection();
+    const root = editorRoot();
+    if (sel.rangeCount && !sel.isCollapsed && root && root.contains(sel.anchorNode)) text = sel.toString();
+  }
+  const n = text ? countWords(text) : 0;
+  setStat('selection', n ? plural(n, 'palabra seleccionada', 'palabras seleccionadas') : '');
+}
+
+// Tildes del menú y botones de la barra inferior, según qué barras están a la vista
+function syncBars() {
+  const side = !shell.classList.contains('no-side');
+  const zoom = !$('zoomBar').hidden;
+  $('sideItem').classList.toggle('checked', side);
+  $('zoomItem').classList.toggle('checked', zoom);
+  $('statusItem').classList.toggle('checked', !document.body.classList.contains('no-status'));
+  $('sideToggle').setAttribute('aria-pressed', side);
+  $('zoomToggle').setAttribute('aria-pressed', zoom);
+}
+
 function showTab(which) {
   const files = which === 'files';
   $('tabFiles').setAttribute('aria-selected', files);
@@ -771,6 +913,7 @@ function showTab(which) {
   $('panelFiles').hidden = !files;
   $('panelOutline').hidden = files;
   shell.classList.remove('no-side');
+  syncBars();
   setPref('tab', which);
 }
 
@@ -798,11 +941,12 @@ const COMMANDS = {
   newFile: () => askName('file'),
   newFolder: () => askName('folder'),
   save,
-  toggleSidebar: () => { shell.classList.toggle('no-side'); setPref('side', !shell.classList.contains('no-side')); },
+  toggleSidebar: () => { shell.classList.toggle('no-side'); setPref('side', !shell.classList.contains('no-side')); syncBars(); },
+  toggleStatus: () => { const off = document.body.classList.toggle('no-status'); setPref('status', !off); syncBars(); },
   toggleSource,
   exportPdf,
   toggleSpell: () => { setPref('spell', !pref('spell', true)); applySpell(); toast(pref('spell', true) ? 'Corrector ortográfico activado' : 'Corrector ortográfico desactivado'); },
-  toggleZoomBar: () => { const z = $('zoomBar'); z.hidden = !z.hidden; setPref('zoomBar', !z.hidden); },
+  toggleZoomBar: () => { const z = $('zoomBar'); z.hidden = !z.hidden; setPref('zoomBar', !z.hidden); syncBars(); },
   showFiles: () => showTab('files'),
   showOutline: () => showTab('outline'),
   focusMode: toggleFocus,
@@ -839,7 +983,11 @@ $('tabFiles').onclick = () => showTab('files');
 $('tabOutline').onclick = () => showTab('outline');
 $('openFolderBtn').onclick = openFolder;
 $('openFileBtn').onclick = openOneFile;
-document.addEventListener('selectionchange', markCurrentBlock);
+document.addEventListener('selectionchange', () => { markCurrentBlock(); updateSelection(); });
+$('source').addEventListener('select', updateSelection);
+$('source').addEventListener('keyup', updateSelection);
+$('source').addEventListener('mouseup', updateSelection);
+desk.addEventListener('scroll', schedulePosition, { passive: true });
 document.addEventListener('visibilitychange', () => { if (document.hidden && state.dirty && state.file) save(); });
 window.addEventListener('beforeunload', (e) => { if (state.dirty) { save(); e.preventDefault(); } });
 
@@ -856,6 +1004,9 @@ window.addEventListener('beforeunload', (e) => { if (state.dirty) { save(); e.pr
   $('zoomPlus').onclick = () => setZoom(state.zoom + 0.1);
   $('zoomOut').onclick = () => setZoom(1);
   $('zoomBar').hidden = pref('zoomBar', true) === false;
+  if (pref('status', true) === false) document.body.classList.add('no-status');
+  buildStatusBar();
+  syncBars();
   document.body.dataset.source = 'no';
   $('source').addEventListener('input', () => { fitSource(); onInput(); });
   $('source').addEventListener('beforeinput', onSourceBeforeInput);
@@ -866,12 +1017,13 @@ window.addEventListener('beforeunload', (e) => { if (state.dirty) { save(); e.pr
     document.execCommand('insertText', false, '\t');
   });
   $('zoomRange').value = Math.round(state.zoom * 100);
-  $('zoomOut').textContent = Math.round(state.zoom * 100) + ' %';
+  $('zoomOut').textContent = $('zoomLabel').textContent = Math.round(state.zoom * 100) + ' %';
   buildDrawer();
   applyStyle();
   await initEditor();
   applySpell();
   layout();
+  updateCounts();
   new ResizeObserver(() => paginate()).observe(editorRoot());
   // El ancho del escritorio cambia al mostrar u ocultar la barra lateral o al cambiar la ventana
   let lastDeskW = 0;

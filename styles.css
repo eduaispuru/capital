@@ -264,7 +264,7 @@ body[data-paged="no"] .vditor-reset hr {
 
 /* ---------- Panel de estilo ---------- */
 .drawer {
-  position: fixed; top: 28px; right: 0; bottom: 0; width: min(380px, 100vw); z-index: 25; overflow-y: auto;
+  position: fixed; top: 28px; right: 0; bottom: var(--status-h); width: min(380px, 100vw); z-index: 25; overflow-y: auto;
   background: var(--paper); border-left: 1px solid var(--side-line); box-shadow: -16px 0 40px -20px rgb(60 50 30 / .35);
   padding: 0 28px 40px; font-family: var(--font-side);
 }
@@ -304,9 +304,45 @@ body[data-paged="no"] .vditor-reset hr {
 
 .drawer .hint { margin: 8px 0 0; font: italic 14px/1.4 var(--font-side); color: var(--ink-faint); }
 
+/* ---------- Barra inferior: datos del texto ---------- */
+:root { --status-h: 28px; }
+body.no-status { --status-h: 0px; }
+body.no-status .statusbar { display: none; }
+.statusbar {
+  flex: none; height: var(--status-h); display: flex; align-items: center; gap: 6px; padding: 0 6px;
+  background: var(--side); border-top: 1px solid var(--side-line); position: relative; z-index: 22;
+  font: 14px var(--font-side); color: var(--ink-soft); font-variant-numeric: oldstyle-nums;
+}
+.sb-left { flex: 1; min-width: 0; display: flex; }
+.sb-right { display: flex; align-items: center; white-space: nowrap; }
+.sb-item { white-space: nowrap; }
+.sb-item:not([hidden]) ~ .sb-item:not([hidden])::before { content: "·"; margin: 0 9px; color: var(--ink-faint); }
+.sb-left .sb-item { font-style: italic; overflow: hidden; text-overflow: ellipsis; padding-left: 4px; }
+.sb-item[data-stat="selection"] { color: var(--ribbon); }
+.sb-btn {
+  height: 22px; min-width: 26px; padding: 0 5px; border-radius: 4px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px; color: var(--ink-soft);
+}
+.sb-btn:hover, .sb-btn[aria-pressed="true"], .sb-btn[aria-expanded="true"] { background: var(--hover); color: var(--ink); }
+.sb-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.3; }
+.sb-btn circle { fill: var(--side); }
+.sb-btn:hover circle, .sb-btn[aria-expanded="true"] circle { fill: var(--hover); }
+.sb-zoom { font-variant-numeric: tabular-nums; border-left: 1px solid var(--side-line); border-radius: 0 4px 4px 0; padding-left: 8px; }
+.sb-menu { position: relative; }
+.sb-pop {
+  position: absolute; right: 0; bottom: calc(100% + 8px); min-width: 230px; padding: 6px;
+  background: #fbfaf7; color: var(--ink); border: 1px solid var(--side-line); border-radius: 6px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / .16); font: 14px var(--ui);
+}
+.sb-pop h4 { margin: 4px 8px 6px; font: 500 11px var(--font-side); letter-spacing: .24em; text-transform: uppercase; color: var(--ink-faint); }
+.sb-pop label { display: flex; align-items: center; gap: 9px; padding: 5px 8px; border-radius: 4px; cursor: pointer; }
+.sb-pop label:hover { background: var(--hover); }
+.sb-pop input { accent-color: var(--ribbon); margin: 0; }
+@media (max-width: 640px) { .sb-left, .sb-item[data-stat="reading"] { display: none; } .sb-right { margin-left: auto; } }
+
 /* Zoom de la hoja */
 .zoom {
-  position: fixed; right: 20px; bottom: 16px; z-index: 20; display: flex; align-items: center; gap: 4px;
+  position: fixed; right: 20px; bottom: calc(var(--status-h) + 12px); z-index: 20; display: flex; align-items: center; gap: 4px;
   background: rgb(250 248 244 / .92); border: 1px solid var(--side-line); border-radius: 999px;
   padding: 3px 6px; box-shadow: 0 4px 14px -6px rgb(60 50 30 / .3); font-family: var(--font-side);
   backdrop-filter: blur(4px);
@@ -347,7 +383,7 @@ body[data-source="yes"] .book::before {
 .update-bar button { background: var(--ribbon); color: #fff; border-radius: 999px; padding: 4px 14px; font: 600 13px var(--ui); }
 .update-bar button:hover { filter: brightness(1.1); }
 
-.toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); background: var(--chrome); color: var(--chrome-fg); font: 13px var(--ui); padding: 8px 14px; border-radius: 6px; z-index: 40; }
+.toast { position: fixed; left: 50%; bottom: calc(var(--status-h) + 20px); transform: translateX(-50%); background: var(--chrome); color: var(--chrome-fg); font: 13px var(--ui); padding: 8px 14px; border-radius: 6px; z-index: 40; }
 
 @media (max-width: 900px) {
   .shell { grid-template-columns: 250px 1fr; }
@@ -362,7 +398,7 @@ body[data-source="yes"] .book::before {
 /* ---------- Exportar a PDF: el navegador arma las páginas al tamaño real (ver @page en app.js) ---------- */
 @media print {
   html, body { height: auto; overflow: visible; background: #fff; display: block; }
-  .menubar, .sidebar, .drawer, .zoom, .toast, .pages, #source, .book::before { display: none !important; }
+  .menubar, .sidebar, .drawer, .zoom, .toast, .statusbar, .pages, #source, .book::before { display: none !important; }
   .shell { display: block; margin: 0 !important; }
   .desk { overflow: visible; padding: 0; background: none; }
   .book { width: auto !important; max-width: none; height: auto !important; margin: 0; background: none !important; box-shadow: none !important; }
