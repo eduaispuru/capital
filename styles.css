@@ -53,6 +53,8 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .menu.open .menu-list { display: block; }
 .menu-list button { display: flex; justify-content: space-between; gap: 24px; width: 100%; text-align: left; padding: 6px 10px; border-radius: 4px; }
 .menu-list button:hover { background: var(--hover); }
+.menu-list .toggle::after { content: ""; width: 14px; text-align: right; color: var(--ribbon); }
+.menu-list .toggle.checked::after { content: "✓"; }
 .menu-list kbd { font: 12px var(--ui); color: var(--ink-faint); }
 .menu-list hr { border: 0; border-top: 1px solid var(--side-line); margin: 4px 6px; }
 .menu-help { padding: 8px 12px; min-width: 320px; }

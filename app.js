@@ -336,6 +336,18 @@ function setText(md) {
 // Texto actual, venga del editor visual o del código fuente
 function currentText() { return state.source ? $('source').value : state.editor.getValue(); }
 
+/* ---------- Corrector ortográfico ---------- */
+// Vditor lo trae apagado; usamos el de Chrome en castellano (subrayado rojo y sugerencias con clic derecho)
+function applySpell() {
+  const on = pref('spell', true);
+  for (const el of [editorRoot(), $('source')]) {
+    if (!el) continue;
+    el.spellcheck = on;
+    el.lang = 'es';
+  }
+  $('spellItem').classList.toggle('checked', on);
+}
+
 /* ---------- Código fuente (Ctrl+/) ---------- */
 function fitSource() {
   const ta = $('source');
@@ -789,6 +801,7 @@ const COMMANDS = {
   toggleSidebar: () => { shell.classList.toggle('no-side'); setPref('side', !shell.classList.contains('no-side')); },
   toggleSource,
   exportPdf,
+  toggleSpell: () => { setPref('spell', !pref('spell', true)); applySpell(); toast(pref('spell', true) ? 'Corrector ortográfico activado' : 'Corrector ortográfico desactivado'); },
   toggleZoomBar: () => { const z = $('zoomBar'); z.hidden = !z.hidden; setPref('zoomBar', !z.hidden); },
   showFiles: () => showTab('files'),
   showOutline: () => showTab('outline'),
@@ -857,6 +870,7 @@ window.addEventListener('beforeunload', (e) => { if (state.dirty) { save(); e.pr
   buildDrawer();
   applyStyle();
   await initEditor();
+  applySpell();
   layout();
   new ResizeObserver(() => paginate()).observe(editorRoot());
   // El ancho del escritorio cambia al mostrar u ocultar la barra lateral o al cambiar la ventana
