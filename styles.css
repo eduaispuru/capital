@@ -138,7 +138,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 
 /* ---------- Escritorio y páginas ---------- */
 .desk { overflow-y: auto; overflow-x: auto; background: linear-gradient(100deg, var(--desk) 0%, var(--desk-light) 100%); padding: 48px 16px 120px; min-width: 0; }
-.book { position: relative; width: var(--page-w); max-width: 100%; margin: 0 auto; }
+.book { position: relative; width: var(--page-w); margin: 0 auto; }
 .pages { position: absolute; inset: 0; pointer-events: none; }
 .page {
   position: absolute; left: 0; width: 100%; height: var(--page-h); background: var(--paper);
@@ -216,8 +216,13 @@ body[data-dropcap="elevada"] .vditor-reset > p:first-child::first-letter { initi
 body[data-dropcap="ornamental"] .vditor-reset > :is(h1, h2, hr) + p::first-letter,
 body[data-dropcap="ornamental"] .vditor-reset > p:first-child::first-letter { initial-letter: var(--dc-lines); margin-right: .12em; font-family: 'Cinzel Decorative', var(--font-body); color: var(--ribbon); }
 body[data-firstline="yes"] .vditor-reset > :is(h1, h2, hr) + p::first-line,
-body[data-firstline="yes"] .vditor-reset > p:first-child::first-line { font-variant-caps: small-caps; letter-spacing: .05em; }
-
+body[data-firstline="yes"] .vditor-reset > p:first-child::first-line { font-variant-caps: small-caps; letter-spacing: .03em; }
+/* La capitular no toma el espaciado ni las versalitas de la primera línea, así las dos líneas arrancan a la misma distancia */
+.vditor-reset > :is(h1, h2, hr) + p::first-letter,
+.vditor-reset > p:first-child::first-letter { letter-spacing: 0; font-variant-caps: normal; }
+/* Con versalitas, la capitular baja un poco para que su tope quede a la altura de las versalitas */
+body[data-firstline="yes"]:is([data-dropcap="clasica"], [data-dropcap="ornamental"]) .vditor-reset > :is(h1, h2, hr) + p::first-letter,
+body[data-firstline="yes"]:is([data-dropcap="clasica"], [data-dropcap="ornamental"]) .vditor-reset > p:first-child::first-letter { initial-letter: calc(var(--dc-lines) - .18) var(--dc-lines); }
 .vditor-reset blockquote { border-left: 0 !important; color: var(--ink-soft) !important; font-style: italic; margin: 1em 1.5em !important; padding: 0 !important; }
 .vditor-reset blockquote p + p { text-indent: 0 !important; }
 .vditor-reset ul, .vditor-reset ol { margin: .5em 0 !important; }

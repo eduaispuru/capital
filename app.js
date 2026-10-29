@@ -135,6 +135,8 @@ function layout() {
   state.contentH = H - top - bottom;
   state.gap = gap;
   paginate();
+  // Si la hoja es más ancha que la ventana, centrar el desplazamiento horizontal
+  desk.scrollLeft = (desk.scrollWidth - desk.clientWidth) / 2;
 }
 
 // Dibuja una hoja de papel detrás de cada página que ocupa el texto
