@@ -1158,9 +1158,41 @@ function schedulePosition() {
   schedulePosition.frame = requestAnimationFrame(() => { schedulePosition.frame = 0; updatePosition(); });
 }
 
-// El botón "ir al final" se esfuma cuando ya se ve el final del texto
+// Último bloque con texto (las notas al final no cuentan como "lo último escrito")
+function lastWritten() {
+  const pre = editorRoot();
+  if (!pre) return null;
+  for (let el = pre.lastElementChild; el; el = el.previousElementSibling) {
+    if (el.matches('[data-type="footnotes-block"]') || !el.textContent.trim()) continue;
+    return el;
+  }
+  return null;
+}
+
+// "Ir al final": deja la última línea escrita en el medio de la pantalla, con el cursor ahí
+function goToEnd() {
+  const el = lastWritten();
+  if (!el) return;
+  const bottom = el.getBoundingClientRect().bottom - desk.getBoundingClientRect().top + desk.scrollTop;
+  desk.scrollTo({ top: Math.max(0, bottom - desk.clientHeight / 2), behavior: 'smooth' });
+  const r = document.createRange();
+  r.selectNodeContents(el);
+  r.collapse(false);
+  const sel = getSelection();
+  sel.removeAllRanges();
+  sel.addRange(r);
+  editorRoot().focus({ preventScroll: true });
+}
+
+// El botón se esfuma mientras la última línea escrita está a la vista
 function updateToEnd() {
-  $('toEnd').classList.toggle('gone', desk.scrollTop + desk.clientHeight >= desk.scrollHeight - 60);
+  const el = state.source ? null : lastWritten();
+  let near = true;
+  if (el) {
+    const y = el.getBoundingClientRect().bottom - desk.getBoundingClientRect().top;
+    near = y > 0 && y < desk.clientHeight - 40;
+  }
+  $('toEnd').classList.toggle('gone', near);
 }
 
 function updateSelection() {
@@ -1283,7 +1315,7 @@ $('source').addEventListener('select', updateSelection);
 $('source').addEventListener('keyup', updateSelection);
 $('source').addEventListener('mouseup', updateSelection);
 desk.addEventListener('scroll', () => { schedulePosition(); updateToEnd(); }, { passive: true });
-$('toEnd').onclick = () => desk.scrollTo({ top: desk.scrollHeight, behavior: 'smooth' });
+$('toEnd').onclick = goToEnd;
 document.addEventListener('visibilitychange', () => { if (document.hidden && state.dirty && state.file) save(); });
 window.addEventListener('beforeunload', (e) => { if (state.dirty) { save(); e.preventDefault(); } });
 
