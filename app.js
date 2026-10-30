@@ -208,18 +208,22 @@ function layout() {
   const [mw, mh] = PAGE_SIZES[style.page] || PAGE_SIZES.a5;
   // El zoom agranda la hoja y la letra juntas, así cada página conserva el mismo texto
   const base = style.page === 'a4' ? 760 : 640;
+  // Al imprimir, la hoja mide exactamente el papel (96 px por pulgada) y las páginas van pegadas:
+  // el PDF sale con los mismos cortes de página y notas al pie que se ven en pantalla
+  const print = state.print && paged;
   const fit = (desk.clientWidth - 32) / base;
-  const z = state.zoom > 1 ? state.zoom : Math.max(280 / base, Math.min(state.zoom, fit));
-  const W = Math.round(base * z);
+  const W = print ? mw * 96 / 25.4 : Math.round(base * (state.zoom > 1 ? state.zoom : Math.max(280 / base, Math.min(state.zoom, fit))));
+  const z = W / base;
   const f = FONTS.find((x) => x.id === style.font) || FONTS[0];
-  document.documentElement.style.setProperty('--fs', (style.size * (f.scale || 1) * z).toFixed(2) + 'px');
+  document.documentElement.style.setProperty('--fs', (style.size * (f.scale || 1) * z).toFixed(3) + 'px');
   document.documentElement.style.setProperty('--zoom', z);
-  const H = Math.round(W * mh / mw);
+  const H = print ? mh * 96 / 25.4 : Math.round(W * mh / mw);
   const narrow = W < 520;
-  const top = Math.round(H * (narrow ? 0.06 : 0.09));
-  const bottom = Math.round(H * (narrow ? 0.07 : 0.1));
-  const side = Math.round(W * (narrow ? 0.07 : 0.13));
-  const gap = narrow ? 24 : 40;
+  const round = print ? (x) => x : Math.round;
+  const top = round(H * (narrow ? 0.06 : 0.09));
+  const bottom = round(H * (narrow ? 0.07 : 0.1));
+  const side = round(W * (narrow ? 0.07 : 0.13));
+  const gap = print ? -(top + bottom) : narrow ? 24 : 40;
   const s = document.documentElement.style;
   s.setProperty('--page-w', W + 'px');
   s.setProperty('--page-h', H + 'px');
@@ -228,7 +232,8 @@ function layout() {
   s.setProperty('--m-side', side + 'px');
   s.setProperty('--content-h', (H - top - bottom) + 'px');
   s.setProperty('--gap', gap + 'px');
-  printSetup(mw, mh, f);
+  if (print) printSetupPaged(mw, mh, f, top, bottom);
+  else printSetup(mw, mh, f);
   state.step = paged ? H + gap : 0;
   state.contentH = H - top - bottom;
   state.gap = gap;
@@ -243,6 +248,7 @@ function paginate() {
   if (!pre || state.source) return;
   document.body.dataset.level = chapterLevel(pre);
   markScenes();
+  layoutNotes(pre);
   if (!state.step) {
     pagesEl.innerHTML = '';
     book.style.height = '';
@@ -267,6 +273,131 @@ function paginate() {
   updateToEnd();
 }
 
+/* ---------- Notas al pie de cada página ---------- */
+// Cada nota se dibuja abajo de la página donde está su llamada. Para hacerle lugar, el texto
+// de esa página termina antes: el párrafo que llega a la zona de notas pasa sus últimas líneas
+// a la página siguiente (widows) o, si no es un párrafo, empieza en la página siguiente.
+const NOTE_SYMBOLS = ['*', '†', '‡', '§'];
+function noteMark(i) {
+  if (style.notes !== 'simbolos') return String(i + 1);
+  return NOTE_SYMBOLS[i % 4].repeat(Math.floor(i / 4) + 1);
+}
+
+function layoutNotes(pre) {
+  const layer = $('notesLayer');
+  layer.innerHTML = '';
+  for (const el of pre.querySelectorAll('[data-fn-fit]')) {
+    for (const prop of ['widows', 'break-before', 'padding-bottom', 'margin-bottom']) el.style.removeProperty(prop);
+    el.removeAttribute('data-fn-fit');
+  }
+  const refs = [...pre.querySelectorAll('sup[data-type="footnotes-ref"]')].filter((r) => !r.closest('[data-type="footnotes-block"]'));
+  if (!state.step || !refs.length) return;
+
+  // Texto de cada nota, sin las marcas de Markdown
+  const defs = new Map();
+  for (const d of pre.querySelectorAll('[data-type="footnotes-def"]')) {
+    const label = ((d.firstChild && d.firstChild.textContent) || '').match(/\[\^([^\]]+)\]/);
+    if (!label) continue;
+    const body = document.createElement('div');
+    for (const child of d.children) body.append(child.cloneNode(true));
+    body.querySelectorAll('.vditor-ir__marker, .vditor-ir__marker--hide').forEach((m) => m.remove());
+    defs.set('^' + label[1], body);
+  }
+  const number = new Map(refs.map((r, i) => [r, i]));
+
+  const bookTop = book.getBoundingClientRect().top;
+  const preTop = pre.getBoundingClientRect().top - bookTop;
+  const yOf = (el) => el.getBoundingClientRect().top - bookTop;
+  const pageAt = (y) => Math.floor((y - preTop + 2) / state.step);
+  const contentBottom = (p) => preTop + p * state.step + state.contentH;
+  const blocks = [...pre.children].filter((b) => !b.matches('[data-type="footnotes-block"]'));
+
+  const draw = (p, list) => {
+    const box = document.createElement('div');
+    box.className = 'page-notes';
+    for (const r of list) {
+      const item = document.createElement('div');
+      item.className = 'pn-item';
+      const num = document.createElement('span');
+      num.className = 'pn-num';
+      num.textContent = noteMark(number.get(r));
+      const text = document.createElement('div');
+      text.className = 'pn-text';
+      const def = defs.get(r.dataset.footnotesLabel);
+      if (def) text.append(...[...def.childNodes].map((n) => n.cloneNode(true)));
+      item.append(num, text);
+      box.append(item);
+    }
+    layer.append(box);
+    box.style.top = (contentBottom(p) - box.offsetHeight) + 'px';
+    return box;
+  };
+
+  // Renglones de un bloque, con su posición (un párrafo cortado entre dos páginas tiene renglones en las dos)
+  const linesOf = (b) => {
+    const range = document.createRange();
+    range.selectNodeContents(b);
+    const rects = [...range.getClientRects()].filter((r) => r.height).map((r) => ({ top: r.top - bookTop, bottom: r.bottom - bookTop }));
+    if (!rects.length) { const r = b.getBoundingClientRect(); return [{ top: r.top - bookTop, bottom: r.bottom - bookTop }]; }
+    rects.sort((a, c) => a.top - c.top);
+    const lh = parseFloat(getComputedStyle(b).lineHeight) || 24;
+    const lines = [];
+    for (const r of rects) {
+      const last = lines[lines.length - 1];
+      // Las llamadas voladas y las cursivas quedan apenas corridas: siguen siendo el mismo renglón
+      if (last && r.top < last.top + lh * 0.6) last.bottom = Math.max(last.bottom, r.bottom);
+      else lines.push({ ...r });
+    }
+    return lines;
+  };
+
+  // El primer bloque que se mete en la zona de las notas cede su lugar
+  const makeRoom = (p, limit) => {
+    for (const b of blocks) {
+      const lines = linesOf(b);
+      const here = lines.filter((l) => pageAt(l.top) === p);
+      if (!here.length || here[here.length - 1].bottom <= limit + 0.5) continue;
+      const below = here.filter((l) => l.bottom > limit + 0.5).length;
+      const after = lines.filter((l) => pageAt(l.top) > p).length;
+      // Un párrafo pasa sus últimos renglones a la página siguiente; si no le quedan dos arriba, pasa entero
+      if (b.tagName === 'P' && here.length - below >= 2) {
+        b.style.widows = after + below;
+        if (!after) {
+          // Si el párrafo entraba entero, un relleno apenas más alto que el lugar que queda lo obliga a cortarse;
+          // el margen negativo lo compensa para que lo que sigue no se corra
+          const extra = contentBottom(p) - here[here.length - 1].bottom + 1;
+          const margin = parseFloat(getComputedStyle(b).marginBottom) || 0;
+          b.style.setProperty('padding-bottom', extra + 'px', 'important');
+          b.style.setProperty('margin-bottom', (margin - extra) + 'px', 'important');
+        }
+      } else b.style.breakBefore = 'column';
+      b.setAttribute('data-fn-fit', '');
+      return;
+    }
+  };
+
+  for (let p = 0; p < 2000; p++) {
+    const pages = refs.map((r) => pageAt(yOf(r)));
+    if (p > Math.max(...pages)) break;
+    const mine = refs.filter((r, i) => pages[i] === p);
+    if (!mine.length) continue;
+    const box = draw(p, mine);
+    makeRoom(p, parseFloat(box.style.top));
+    // Si alguna llamada pasó a la página siguiente, su nota va con ella
+    const still = mine.filter((r) => pageAt(yOf(r)) === p);
+    if (still.length !== mine.length) { box.remove(); if (still.length) draw(p, still); }
+  }
+}
+
+// PDF con páginas: el papel del tamaño elegido, márgenes arriba y abajo, y el número de página
+function printSetupPaged(mw, mh, f, top, bottom) {
+  const fs = style.size * (f.scale || 1) * (mw * 96 / 25.4) / (style.page === 'a4' ? 760 : 640);
+  const folio = style.folios
+    ? `@bottom-center { content: counter(page); font-family: '${f.id}', Georgia, serif; font-size: ${(fs * 0.76).toFixed(2)}px; color: #8a8378; vertical-align: top; padding-top: ${(bottom * 0.3).toFixed(1)}px; }`
+    : '';
+  $('printPage').textContent = `@page { size: ${mw}mm ${mh}mm; margin: ${top}px 0 ${bottom}px; ${folio} }`;
+}
+
 // Página real para el PDF: mismo tamaño, márgenes y letra que en pantalla, en milímetros
 function printSetup(mw, mh, f) {
   const top = mh * 0.09, bottom = mh * 0.1, side = mw * 0.13;
@@ -283,6 +414,18 @@ function printSetup(mw, mh, f) {
   $('printPage').textContent =
     `@page { size: ${mw}mm ${mh}mm; margin: ${top.toFixed(1)}mm ${side.toFixed(1)}mm ${bottom.toFixed(1)}mm; ${folio} }`;
 }
+
+// Antes de imprimir (Ctrl+P o Exportar como PDF), armar las páginas al tamaño del papel; después, volver
+window.addEventListener('beforeprint', () => {
+  state.print = true;
+  document.body.classList.add('printing');
+  layout();
+});
+window.addEventListener('afterprint', () => {
+  state.print = false;
+  document.body.classList.remove('printing');
+  layout();
+});
 
 function exportPdf() {
   if (state.source) toggleSource();

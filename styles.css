@@ -270,6 +270,19 @@ body[data-notes="simbolos"] .vditor-reset sup[data-type="footnotes-ref"]:not(.vd
 .vditor-reset [data-type="footnotes-def"]::before { content: counter(nota-def) "."; flex: none; min-width: 1.3em; font-size: calc(var(--fs) * .8); color: var(--ink-soft); font-variant-numeric: lining-nums; }
 body[data-notes="bordo"] .vditor-reset [data-type="footnotes-def"]::before { color: var(--ribbon); }
 body[data-notes="simbolos"] .vditor-reset [data-type="footnotes-def"]::before { content: counter(nota-def, capital-notas); }
+/* Con páginas, cada nota va al pie de su página; la lista del final queda solo para editar el texto */
+.notes-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.page-notes { position: absolute; left: var(--m-side); right: var(--m-side); padding-top: 1.15em; font: calc(var(--fs) * .8) / 1.45 var(--font-body); color: var(--ink); }
+.page-notes::before { content: ""; position: absolute; top: .5em; left: 0; width: 28%; border-top: 1px solid var(--ink-faint); }
+.pn-item { display: flex; align-items: baseline; gap: .5em; margin-top: .15em; }
+.pn-num { flex: none; min-width: 1.1em; color: var(--ink-soft); font-variant-numeric: lining-nums; }
+body[data-notes="bordo"] .pn-num { color: var(--ribbon); }
+.pn-text { flex: 1; min-width: 0; }
+.pn-text p { margin: 0; text-indent: 0; }
+body[data-paged="yes"] .vditor-ir .vditor-reset [data-type="footnotes-block"]::before {
+  content: "Texto de las notas · se muestran al pie de su página" !important; width: auto; border: 0;
+  font: italic 12px var(--ui); color: var(--ink-faint); letter-spacing: .02em;
+}
 .vditor-reset [data-type="footnotes-def"] > p { flex: 1; font-size: calc(var(--fs) * .84) !important; line-height: 1.5 !important; text-indent: 0 !important; margin: 0 !important; text-align: left !important; }
 .vditor-reset ul, .vditor-reset ol { margin: .5em 0 !important; }
 /* Estilos de lista */
@@ -465,23 +478,33 @@ body[data-source="yes"] .book::before {
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
-/* ---------- Exportar a PDF: el navegador arma las páginas al tamaño real (ver @page en app.js) ---------- */
+/* Mientras se prepara la impresión: sin márgenes arriba y abajo (los pone @page) y sin la lista de notas del final */
+body.printing #editor { padding: 0 var(--m-side) !important; }
+body.printing[data-paged="yes"] [data-type="footnotes-block"] { display: none !important; }
+
+/* ---------- Exportar a PDF ---------- */
+/* Con páginas, el PDF reproduce lo que se ve: mismos cortes y notas al pie (ver layout y @page en app.js).
+   En modo continuo, el navegador arma las páginas a partir del texto corrido. */
 @media print {
   html, body { height: auto; overflow: visible; background: #fff; display: block; }
   ::highlight(capital-spell) { text-decoration: none; }
   .menubar, .sidebar, .drawer, .zoom, .toast, .statusbar, .to-end, .spell-menu, .pages, #source, .book::before { display: none !important; }
   .shell { display: block; margin: 0 !important; }
   .desk { overflow: visible; padding: 0; background: none; }
-  .book { width: auto !important; max-width: none; height: auto !important; margin: 0; background: none !important; box-shadow: none !important; }
+  .book { max-width: none; margin: 0; background: none !important; box-shadow: none !important; }
   body[data-source="yes"] #editor { display: block; }
-  #editor { padding: 0; }
-  .vditor-reset { font-size: var(--fs-print) !important; color: #000 !important; }
-  .vditor-ir pre.vditor-reset { column-count: auto !important; column-height: auto !important; column-wrap: nowrap !important; row-gap: normal !important; orphans: 2; widows: 2; }
-  .vditor-reset > h1, body[data-level="2"] .vditor-reset > h2 { break-before: page !important; }
-  body[data-breaks="titulos"] .vditor-reset > :is(h1, h2, h3, h4, h5, h6):not(:is(h1, h2, h3, h4, h5, h6) + *) { break-before: page !important; }
-  body[data-chapter-space="yes"] :is(body[data-level="1"] .vditor-reset > h1, body[data-level="2"] .vditor-reset > h2) { padding-top: var(--chapter-space-print) !important; }
-  body[data-level="2"] .vditor-reset > h1 { padding-top: var(--title-space-print) !important; break-after: page; }
-  .vditor-reset hr { break-after: page !important; visibility: hidden; height: 0 !important; margin: 0 !important; border: 0 !important; box-shadow: none !important; background: none !important; }
+  .vditor-reset { color: #000 !important; }
   .vditor-ir__marker { display: none !important; }
   .vditor-reset > * { opacity: 1 !important; }
+
+  body[data-paged="no"] .book, body.printing .book { height: auto !important; }
+  body[data-paged="no"] .book { width: auto !important; }
+  body[data-paged="no"] #editor { padding: 0; }
+  body[data-paged="no"] .vditor-reset { font-size: var(--fs-print) !important; }
+  body[data-paged="no"] .vditor-ir pre.vditor-reset { column-count: auto !important; column-height: auto !important; column-wrap: nowrap !important; row-gap: normal !important; orphans: 2; widows: 2; }
+  body[data-paged="no"] .vditor-reset > h1, body[data-paged="no"][data-level="2"] .vditor-reset > h2 { break-before: page !important; }
+  body[data-paged="no"][data-breaks="titulos"] .vditor-reset > :is(h1, h2, h3, h4, h5, h6):not(:is(h1, h2, h3, h4, h5, h6) + *) { break-before: page !important; }
+  body[data-paged="no"][data-chapter-space="yes"] :is(body[data-level="1"] .vditor-reset > h1, body[data-level="2"] .vditor-reset > h2) { padding-top: var(--chapter-space-print) !important; }
+  body[data-paged="no"][data-level="2"] .vditor-reset > h1 { padding-top: var(--title-space-print) !important; break-after: page; }
+  body[data-paged="no"] .vditor-reset hr { break-after: page !important; visibility: hidden; height: 0 !important; margin: 0 !important; border: 0 !important; box-shadow: none !important; background: none !important; }
 }
