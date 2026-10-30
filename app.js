@@ -117,24 +117,26 @@ function applyStyle() {
   d.scene = style.scene;
   d.notes = style.notes;
   setPref('style', style);
-  // Cada libro recuerda su estilo
+  // Cada archivo recuerda su estilo
   const b = bookOf(state.file);
   if (b) { const all = pref('bookStyles', {}); all[b.key] = style; setPref('bookStyles', all); }
   layout();
 }
 
-// El libro es la carpeta donde está el archivo (o el archivo mismo, si se abrió suelto)
+// Clave del estilo de cada archivo; `folder` es la de la versión anterior, que guardaba un estilo por carpeta
 function bookOf(file) {
   if (!file) return null;
-  if (file.single || !state.root) return { key: 'archivo:' + file.handle.name, name: file.handle.name.replace(/\.(md|markdown|txt)$/i, '') };
+  const name = file.handle.name.replace(/\.(md|markdown|txt)$/i, '');
+  if (file.single || !state.root) return { key: 'archivo:' + file.handle.name, name };
   const i = file.path.lastIndexOf('/');
   const dir = i < 0 ? '' : file.path.slice(0, i);
-  return { key: state.root.name + '/' + dir, name: dir ? dir.slice(dir.lastIndexOf('/') + 1) : state.root.name };
+  return { key: state.root.name + '/' + file.path, folder: state.root.name + '/' + dir, name };
 }
 
 function loadBookStyle() {
   const b = bookOf(state.file);
-  const saved = b && pref('bookStyles', {})[b.key];
+  const all = pref('bookStyles', {});
+  const saved = b && (all[b.key] || (b.folder !== undefined && all[b.folder]));
   if (saved) style = { ...STYLE_DEFAULTS, ...saved };
   $('drawerBook').textContent = b ? 'Estilo de «' + b.name + '»' : '';
   refreshStyle();
