@@ -39,9 +39,12 @@ const OPTIONS = {
   chapter: [['versalitas', 'Versalitas'], ['ornamento', 'Con ornamento'], ['cursiva', 'Cursiva'], ['moderno', 'Moderno']],
   level: [['auto', 'Automático'], ['1', '#'], ['2', '##']],
   breaks: [['titulos', 'Todos los títulos'], ['capitulos', 'Solo capítulos']],
+  quote: [['cursiva', 'Cursiva'], ['clasica', 'Clásica'], ['linea', 'Con línea'], ['comillas', 'Con comillas']],
+  scene: [['asterismo', '⁂'], ['asteriscos', '* * *'], ['hoja', '❦'], ['blanco', 'En blanco']],
+  notes: [['numeros', '¹ ² ³'], ['bordo', '¹ ² ³ en bordó'], ['simbolos', '* † ‡']],
   olStyle: [['decimal', '1.'], ['paren', '1)'], ['alpha', 'a.'], ['roman', 'i.']],
   ulStyle: [['disc', '•'], ['dash', '—'], ['circle', '◦']],
-  para: [['sangria', 'Sangría'], ['amplia', 'Sangría amplia'], ['espacio', 'Espacio entre párrafos']],
+  para: [['sangria', 'Sangría'], ['amplia', 'Sangría amplia'], ['nada', 'Sin sangría'], ['espacio', 'Espacio entre párrafos']],
   page: [['a5', 'Novela A5'], ['6x9', '6 × 9 in'], ['a4', 'A4'], ['continuo', 'Sin páginas']],
 };
 const PRESETS = {
@@ -53,7 +56,11 @@ const PRESETS = {
 const PAGE_SIZES = { a5: [148, 210], '6x9': [152.4, 228.6], a4: [210, 297] };
 const STYLE_KEYS = ['font', 'size', 'leading', 'dropcap', 'firstline', 'chapter', 'para', 'justify'];
 const presetValues = (p) => Object.fromEntries(STYLE_KEYS.map((k) => [k, p[k]]));
-const STYLE_DEFAULTS = { preset: 'tinta', ...presetValues(PRESETS.tinta), page: 'a5', folios: true, chapterSpace: true, level: 'auto', breaks: 'titulos', dropLines: '3', olStyle: 'decimal', ulStyle: 'disc' };
+const STYLE_DEFAULTS = { preset: 'tinta', ...presetValues(PRESETS.tinta), page: 'a5', folios: true, chapterSpace: true, level: 'auto', breaks: 'titulos', dropLines: '3', olStyle: 'decimal', ulStyle: 'disc', quote: 'cursiva', scene: 'asterismo', notes: 'numeros' };
+// Opciones que no forman parte de los estilos predefinidos: cambiarlas no deselecciona el estilo
+const LOOSE_KEYS = ['page', 'level', 'breaks', 'dropLines', 'olStyle', 'ulStyle', 'quote', 'scene', 'notes'];
+// Un párrafo con solo este signo es un cambio de escena (se escribe *** y Enter)
+const SCENE = '⁂';
 let style = { ...STYLE_DEFAULTS };
 
 /* ---------- Guardado de preferencias ---------- */
@@ -106,8 +113,39 @@ function applyStyle() {
   d.breaks = style.breaks;
   d.ol = style.olStyle;
   d.ul = style.ulStyle;
+  d.quote = style.quote;
+  d.scene = style.scene;
+  d.notes = style.notes;
   setPref('style', style);
+  // Cada libro recuerda su estilo
+  const b = bookOf(state.file);
+  if (b) { const all = pref('bookStyles', {}); all[b.key] = style; setPref('bookStyles', all); }
   layout();
+}
+
+// El libro es la carpeta donde está el archivo (o el archivo mismo, si se abrió suelto)
+function bookOf(file) {
+  if (!file) return null;
+  if (file.single || !state.root) return { key: 'archivo:' + file.handle.name, name: file.handle.name.replace(/\.(md|markdown|txt)$/i, '') };
+  const i = file.path.lastIndexOf('/');
+  const dir = i < 0 ? '' : file.path.slice(0, i);
+  return { key: state.root.name + '/' + dir, name: dir ? dir.slice(dir.lastIndexOf('/') + 1) : state.root.name };
+}
+
+function loadBookStyle() {
+  const b = bookOf(state.file);
+  const saved = b && pref('bookStyles', {})[b.key];
+  if (saved) style = { ...STYLE_DEFAULTS, ...saved };
+  $('drawerBook').textContent = b ? 'Estilo de «' + b.name + '»' : '';
+  refreshStyle();
+}
+
+// Vista previa: la hoja cambia de fuente mientras el mouse pasa por la lista
+function previewFont(id) {
+  const f = FONTS.find((x) => x.id === id) || FONTS[0];
+  const root = document.documentElement.style;
+  root.setProperty('--font-body', `'${f.id}', Georgia, serif`);
+  root.setProperty('--fs', (style.size * (f.scale || 1) * state.z).toFixed(2) + 'px');
 }
 
 function layout() {
@@ -118,6 +156,7 @@ function layout() {
   const base = style.page === 'a4' ? 760 : 640;
   const fit = (desk.clientWidth - 32) / base;
   const z = state.zoom > 1 ? state.zoom : Math.max(280 / base, Math.min(state.zoom, fit));
+  state.z = z;
   const W = Math.round(base * z);
   const f = FONTS.find((x) => x.id === style.font) || FONTS[0];
   document.documentElement.style.setProperty('--fs', (style.size * (f.scale || 1) * z).toFixed(2) + 'px');
@@ -150,6 +189,7 @@ function paginate() {
   const pre = editorRoot();
   if (!pre || state.source) return;
   document.body.dataset.level = chapterLevel(pre);
+  markScenes();
   if (!state.step) {
     pagesEl.innerHTML = '';
     book.style.height = '';
@@ -234,10 +274,8 @@ function check(key, label) {
 }
 function buildDrawer() {
   $('drawerBody').innerHTML =
-    '<section><h3>Estilos</h3><div class="presets">' +
-      Object.entries(PRESETS).map(([id, p]) =>
-        `<button type="button" class="preset" data-preset="${id}"><span class="pn" style="font-family:'${p.font}'">${p.name}</span><span class="pd">${p.desc}</span></button>`).join('') +
-    '</div></section>' +
+    '<section><h3>Estilos</h3><div class="presets" id="presetGrid"></div>' +
+      '<button type="button" class="save-style" id="saveStyleBtn">+ Guardar el estilo actual</button></section>' +
     '<section><h3>Fuente</h3><div class="fonts">' +
       FONTS.map((f) => `<button type="button" class="font-opt" data-font="${f.id}" style="font-family:'${f.id}'"><span class="aa">Aa</span><span class="fn">${f.id}</span><span class="fd">${f.note}</span></button>`).join('') +
     '</div>' +
@@ -251,7 +289,14 @@ function buildDrawer() {
       '<p class="hint">En automático, si hay un solo # lo toma como título del libro y los capítulos pasan a ser ##.</p></section>' +
     seg('breaks', 'Hoja nueva antes de') +
       '<p class="hint">Un título que va justo debajo de otro sigue en la misma hoja.</p></section>' +
-    seg('para', 'Párrafos') + check('justify', 'Texto justificado') + '</section>' +
+    seg('para', 'Párrafos') + check('justify', 'Texto justificado') +
+      '<p class="hint">Con Tab al principio de un párrafo le ponés sangría a mano, aunque elijas Sin sangría.</p></section>' +
+    seg('quote', 'Citas') +
+      '<p class="hint">Un párrafo que empieza con &gt; y un espacio es una cita.</p></section>' +
+    seg('scene', 'Cambio de escena') +
+      '<p class="hint">Escribí *** y Enter para separar escenas dentro de un capítulo, sin cambiar de hoja.</p></section>' +
+    seg('notes', 'Notas') +
+      '<p class="hint">Escribí [^1] donde va la llamada y, en una línea aparte, [^1]: y el texto de la nota. Las notas se juntan al final del texto.</p></section>' +
     seg('olStyle', 'Listas numeradas') +
       '<p class="hint">Escribí 1 y un espacio al principio de un párrafo para empezar una lista; con Enter sigue sola.</p></section>' +
     seg('ulStyle', 'Viñetas') + '</section>' +
@@ -259,14 +304,26 @@ function buildDrawer() {
       (PAGES_OK ? '' : '<p class="note">Para ver páginas, actualizá Chrome o Edge a la última versión.</p>') + '</section>';
 
   const body = $('drawerBody');
+  renderPresets();
   body.addEventListener('click', (e) => {
+    const del = e.target.closest('[data-del]');
+    if (del) return deleteMyStyle(del.dataset.del);
     const p = e.target.closest('[data-preset]');
-    if (p) { style = { ...style, ...presetValues(PRESETS[p.dataset.preset]), preset: p.dataset.preset }; return refreshStyle(); }
+    if (p) {
+      const id = p.dataset.preset;
+      const mine = myStyles()[id];
+      style = mine ? { ...style, ...mine.values, preset: id } : { ...style, ...presetValues(PRESETS[id]), preset: id };
+      return refreshStyle();
+    }
     const f = e.target.closest('[data-font]');
     if (f) { style.font = f.dataset.font; style.preset = null; return refreshStyle(); }
     const b = e.target.closest('.seg button');
-    if (b) { style[b.parentElement.dataset.key] = b.dataset.val; if (!['page', 'level', 'breaks', 'dropLines', 'olStyle', 'ulStyle'].includes(b.parentElement.dataset.key)) style.preset = null; refreshStyle(); }
+    if (b) { style[b.parentElement.dataset.key] = b.dataset.val; if (!LOOSE_KEYS.includes(b.parentElement.dataset.key)) style.preset = null; refreshStyle(); }
   });
+  const fonts = body.querySelector('.fonts');
+  fonts.addEventListener('mouseover', (e) => { const f = e.target.closest('[data-font]'); if (f) previewFont(f.dataset.font); });
+  fonts.addEventListener('mouseleave', () => previewFont(style.font));
+  $('saveStyleBtn').onclick = saveMyStyle;
   body.addEventListener('input', (e) => {
     const k = e.target.dataset.key;
     if (!k) return;
@@ -276,6 +333,54 @@ function buildDrawer() {
   });
   syncDrawer();
 }
+/* Estilos propios: guardan todas las opciones del panel con un nombre */
+function myStyles() { return pref('myStyles', {}); }
+function renderPresets() {
+  const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  $('presetGrid').innerHTML =
+    Object.entries(PRESETS).map(([id, p]) =>
+      `<button type="button" class="preset" data-preset="${id}"><span class="pn" style="font-family:'${p.font}'">${p.name}</span><span class="pd">${p.desc}</span></button>`).join('') +
+    Object.entries(myStyles()).map(([id, m]) =>
+      `<button type="button" class="preset mine" data-preset="${id}"><span class="pn" style="font-family:'${m.values.font}'">${esc(m.name)}</span><span class="pd">Tuyo · ${esc(m.values.font)}</span>` +
+      `<span class="del" data-del="${id}" title="Borrar este estilo" aria-label="Borrar ${esc(m.name)}">×</span></button>`).join('');
+  syncDrawer();
+}
+function saveMyStyle() {
+  const btn = $('saveStyleBtn');
+  const input = document.createElement('input');
+  input.className = 'new-input style-name';
+  input.placeholder = 'Nombre del estilo';
+  btn.replaceWith(input);
+  input.focus();
+  let done = false;
+  const finish = (ok) => {
+    if (done) return; done = true;
+    const name = input.value.trim();
+    input.replaceWith(btn);
+    if (!ok || !name) return;
+    const id = 'mine-' + Date.now().toString(36);
+    const { preset, ...values } = style;
+    setPref('myStyles', { ...myStyles(), [id]: { name, values } });
+    style.preset = id;
+    applyStyle();
+    renderPresets();
+    toast('Estilo «' + name + '» guardado');
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    if (e.key === 'Escape') finish(false);
+  });
+  input.addEventListener('blur', () => finish(true));
+}
+function deleteMyStyle(id) {
+  const all = myStyles();
+  if (!all[id] || !confirm('¿Borrar el estilo «' + all[id].name + '»? Tus textos no cambian.')) return;
+  delete all[id];
+  setPref('myStyles', all);
+  if (style.preset === id) { style.preset = null; applyStyle(); }
+  renderPresets();
+}
+
 function syncDrawer() {
   const body = $('drawerBody');
   body.querySelectorAll('[data-preset]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.preset === style.preset));
@@ -326,6 +431,7 @@ function onInput() {
   if (state.file) onInput.timer = setTimeout(save, 900);
   clearTimeout(onInput.outline); onInput.outline = setTimeout(renderOutline, 300);
   scheduleCounts();
+  markScenes();
 }
 
 function editorRoot() { return document.querySelector('#editor .vditor-ir pre.vditor-reset'); }
@@ -418,7 +524,7 @@ async function saveAs() {
       suggestedName: 'sin-titulo.md',
       types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }],
     });
-    state.file = { handle, path: handle.name };
+    state.file = { handle, path: handle.name, single: true };
     state.dirty = true;
     await save();
     showDocName();
@@ -426,11 +532,12 @@ async function saveAs() {
   } catch (e) { if (e.name !== 'AbortError') toast('No se pudo guardar: ' + e.message); }
 }
 
-async function openFile(handle, path) {
+async function openFile(handle, path, single = false) {
   if (state.dirty && state.file) await save();
   try {
     const text = await (await handle.getFile()).text();
-    state.file = { handle, path };
+    state.file = { handle, path, single };
+    loadBookStyle();
     setText(text);
     showDocName();
     setSaveState('Guardado');
@@ -588,7 +695,7 @@ async function openOneFile() {
       id: 'tinta-file',
       types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md', '.markdown', '.txt'] } }],
     });
-    await openFile(handle, handle.name);
+    await openFile(handle, handle.name, true);
   } catch (e) { if (e.name !== 'AbortError') toast('No se pudo abrir el archivo: ' + e.message); }
 }
 
@@ -761,6 +868,55 @@ function onEditorBeforeInput(e) {
     sel.addRange(r);
   }
   document.execCommand('insertText', false, insert);
+}
+
+/* ---------- Cambio de escena y sangría a mano ---------- */
+// Sangría a mano: un espacio de 1,5 em al principio del párrafo, que se guarda en el texto
+const INDENT = '  ';
+
+// Marca los párrafos de cambio de escena para dibujarles el ornamento elegido
+function markScenes() {
+  const pre = editorRoot();
+  if (!pre) return;
+  for (const p of pre.querySelectorAll(':scope > p')) {
+    const on = p.textContent.trim() === SCENE;
+    if (on !== p.hasAttribute('data-scene')) p.toggleAttribute('data-scene', on);
+  }
+}
+
+function caretBlock() {
+  const sel = getSelection();
+  if (!sel.rangeCount) return null;
+  const node = sel.anchorNode;
+  const block = (node.nodeType === 1 ? node : node.parentElement).closest('p');
+  return block && block.parentElement === editorRoot() ? { sel, block } : null;
+}
+
+function onEditorKeydown(e) {
+  if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+  // *** y Enter: el párrafo pasa a ser un cambio de escena (antes de que el editor lo convierta en salto de página)
+  if (e.key === 'Enter' && !e.shiftKey) {
+    const c = caretBlock();
+    if (!c || c.block.textContent.trim() !== '***') return;
+    c.block.textContent = SCENE;
+    const r = document.createRange();
+    r.selectNodeContents(c.block);
+    r.collapse(false);
+    c.sel.removeAllRanges();
+    c.sel.addRange(r);
+  }
+  // Tab al principio de un párrafo: sangría a mano
+  if (e.key === 'Tab' && !e.shiftKey) {
+    const c = caretBlock();
+    if (!c || !c.sel.isCollapsed) return;
+    const before = document.createRange();
+    before.setStart(c.block, 0);
+    before.setEnd(c.sel.anchorNode, c.sel.anchorOffset);
+    if (before.toString().replace(/​/g, '') !== '') return;
+    e.preventDefault();
+    e.stopPropagation();
+    document.execCommand('insertText', false, INDENT);
+  }
 }
 
 function onSourceBeforeInput(e) {
@@ -1016,10 +1172,20 @@ window.addEventListener('beforeunload', (e) => { if (state.dirty) { save(); e.pr
   $('source').addEventListener('input', () => { fitSource(); onInput(); });
   $('source').addEventListener('beforeinput', onSourceBeforeInput);
   $('editor').addEventListener('beforeinput', onEditorBeforeInput, true);
+  $('editor').addEventListener('keydown', onEditorKeydown, true);
   $('source').addEventListener('keydown', (e) => {
+    const ta = e.target;
+    const lineStart = ta.value.lastIndexOf('\n', ta.selectionStart - 1) + 1;
+    const line = ta.value.slice(lineStart, ta.selectionStart);
+    if (e.key === 'Enter' && !e.shiftKey && line.trim() === '***' && ta.value[ta.selectionStart] !== '*') {
+      ta.setSelectionRange(lineStart, ta.selectionStart);
+      document.execCommand('insertText', false, SCENE);
+      return;
+    }
     if (e.key !== 'Tab') return;
     e.preventDefault();
-    document.execCommand('insertText', false, '\t');
+    // Al principio de una línea, la misma sangría que en el libro (un tabulador ahí sería un bloque de código)
+    document.execCommand('insertText', false, line === '' ? INDENT : '\t');
   });
   $('zoomRange').value = Math.round(state.zoom * 100);
   $('zoomOut').textContent = $('zoomLabel').textContent = Math.round(state.zoom * 100) + ' %';
@@ -1040,7 +1206,7 @@ window.addEventListener('beforeunload', (e) => { if (state.dirty) { save(); e.pr
   if ('launchQueue' in window) {
     launchQueue.setConsumer(async (params) => {
       const h = params.files && params.files[0];
-      if (h) await openFile(h, h.name);
+      if (h) await openFile(h, h.name, true);
     });
   }
   watchUpdates();

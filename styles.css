@@ -238,6 +238,39 @@ body[data-firstline="yes"]:is([data-dropcap="clasica"], [data-dropcap="ornamenta
 body[data-firstline="yes"]:is([data-dropcap="clasica"], [data-dropcap="ornamental"]) .vditor-reset > p:first-child::first-letter { initial-letter: calc(var(--dc-lines) - .18) var(--dc-lines); }
 .vditor-reset blockquote { border-left: 0 !important; color: var(--ink-soft) !important; font-style: italic; margin: 1em 1.5em !important; padding: 0 !important; }
 .vditor-reset blockquote p + p { text-indent: 0 !important; }
+/* Estilos de cita */
+body[data-quote="clasica"] .vditor-reset blockquote { font-style: normal; color: var(--ink) !important; font-size: .92em; margin: 1.2em 2.2em !important; }
+body[data-quote="linea"] .vditor-reset blockquote { font-style: normal; border-left: 2px solid var(--ribbon) !important; padding-left: 1em !important; margin: 1.1em 0 1.1em .3em !important; }
+body[data-quote="comillas"] .vditor-reset blockquote { position: relative; padding-left: 1.7em !important; margin: 1.2em 1.5em 1.2em .5em !important; }
+body[data-quote="comillas"] .vditor-reset blockquote::before {
+  content: "«"; position: absolute; left: 0; top: -.12em; font: normal 2.3em/1 var(--font-body); color: var(--ribbon); opacity: .85;
+}
+
+/* Cambio de escena: un párrafo con ⁂ se dibuja con el ornamento elegido */
+body { --scene-mark: "⁂"; }
+body[data-scene="asteriscos"] { --scene-mark: "*\2003*\2003*"; }
+body[data-scene="hoja"] { --scene-mark: "❦"; }
+body[data-scene="blanco"] { --scene-mark: "\00a0"; }
+.vditor-reset > p[data-scene] { font-size: 0 !important; text-indent: 0 !important; text-align: center !important; margin: 1.1em 0 !important; }
+.vditor-reset > p[data-scene]::before { content: var(--scene-mark); font-size: var(--fs); color: var(--ribbon); }
+.vditor-reset > p[data-scene] + p { text-indent: 0 !important; }
+
+/* Notas: llamada volada y notas al final, separadas por un filete corto, en letra más chica */
+.vditor-reset { counter-reset: nota-ref nota-def; }
+@counter-style capital-notas { system: symbolic; symbols: "*" "†" "‡" "§"; }
+.vditor-reset sup[data-type="footnotes-ref"] { counter-increment: nota-ref; font-size: .64em; line-height: 0; vertical-align: .55em; margin-left: .06em; font-variant-numeric: lining-nums; color: var(--ink); }
+body[data-notes="bordo"] .vditor-reset sup[data-type="footnotes-ref"] { color: var(--ribbon); }
+body[data-notes="simbolos"] .vditor-reset sup[data-type="footnotes-ref"]:not(.vditor-ir__node--expand) > * { display: none; }
+body[data-notes="simbolos"] .vditor-reset sup[data-type="footnotes-ref"]:not(.vditor-ir__node--expand)::after { content: counter(nota-ref, capital-notas); }
+.vditor-reset [data-type="footnotes-block"] { margin: 2.4em 0 0 !important; padding: 0 !important; border: 0 !important; background: none !important; }
+.vditor-ir .vditor-reset [data-type="footnotes-block"]::before { content: "" !important; float: none !important; display: block; width: 28%; padding: 0 !important; margin: 0 0 .9em !important; border-top: 1px solid var(--ink-faint); }
+.vditor-reset [data-type="footnotes-def"] {
+  counter-increment: nota-def; display: flex; align-items: baseline; gap: .55em; font-size: 0 !important; margin: 0 0 .45em !important;
+}
+.vditor-reset [data-type="footnotes-def"]::before { content: counter(nota-def) "."; flex: none; min-width: 1.3em; font-size: calc(var(--fs) * .8); color: var(--ink-soft); font-variant-numeric: lining-nums; }
+body[data-notes="bordo"] .vditor-reset [data-type="footnotes-def"]::before { color: var(--ribbon); }
+body[data-notes="simbolos"] .vditor-reset [data-type="footnotes-def"]::before { content: counter(nota-def, capital-notas); }
+.vditor-reset [data-type="footnotes-def"] > p { flex: 1; font-size: calc(var(--fs) * .84) !important; line-height: 1.5 !important; text-indent: 0 !important; margin: 0 !important; text-align: left !important; }
 .vditor-reset ul, .vditor-reset ol { margin: .5em 0 !important; }
 /* Estilos de lista */
 @counter-style capital-paren { system: extends decimal; suffix: ") "; }
@@ -272,6 +305,14 @@ body[data-paged="no"] .vditor-reset hr {
 }
 .drawer-head { display: flex; align-items: baseline; justify-content: space-between; position: sticky; top: 0; background: var(--paper); padding: 22px 0 10px; border-bottom: 1px solid var(--side-line); z-index: 1; }
 .drawer-head h2 { margin: 0; font: italic 400 28px var(--font-display); }
+.drawer-book { margin: 6px 0 0; font: italic 14px var(--font-side); color: var(--ink-faint); }
+.drawer-book:empty { display: none; }
+.preset.mine { position: relative; padding-right: 26px; }
+.preset .del { position: absolute; top: 4px; right: 6px; width: 20px; height: 20px; line-height: 18px; text-align: center; border-radius: 50%; color: var(--ink-faint); font-size: 15px; }
+.preset .del:hover { background: var(--hover); color: var(--ribbon); }
+.save-style { margin-top: 10px; font: italic 15px var(--font-side); color: var(--ink-soft); padding: 4px 0; }
+.save-style:hover { color: var(--ribbon); }
+.style-name { margin-top: 10px; }
 .drawer-close { font-size: 26px; line-height: 1; color: var(--ink-faint); padding: 0 4px; }
 .drawer-close:hover { color: var(--ink); }
 .drawer section { padding: 18px 0 6px; }
