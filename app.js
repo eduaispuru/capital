@@ -140,14 +140,6 @@ function loadBookStyle() {
   refreshStyle();
 }
 
-// Vista previa: la hoja cambia de fuente mientras el mouse pasa por la lista
-function previewFont(id) {
-  const f = FONTS.find((x) => x.id === id) || FONTS[0];
-  const root = document.documentElement.style;
-  root.setProperty('--font-body', `'${f.id}', Georgia, serif`);
-  root.setProperty('--fs', (style.size * (f.scale || 1) * state.z).toFixed(2) + 'px');
-}
-
 function layout() {
   const paged = PAGES_OK && style.page !== 'continuo';
   document.body.dataset.paged = paged ? 'yes' : 'no';
@@ -156,7 +148,6 @@ function layout() {
   const base = style.page === 'a4' ? 760 : 640;
   const fit = (desk.clientWidth - 32) / base;
   const z = state.zoom > 1 ? state.zoom : Math.max(280 / base, Math.min(state.zoom, fit));
-  state.z = z;
   const W = Math.round(base * z);
   const f = FONTS.find((x) => x.id === style.font) || FONTS[0];
   document.documentElement.style.setProperty('--fs', (style.size * (f.scale || 1) * z).toFixed(2) + 'px');
@@ -320,9 +311,6 @@ function buildDrawer() {
     const b = e.target.closest('.seg button');
     if (b) { style[b.parentElement.dataset.key] = b.dataset.val; if (!LOOSE_KEYS.includes(b.parentElement.dataset.key)) style.preset = null; refreshStyle(); }
   });
-  const fonts = body.querySelector('.fonts');
-  fonts.addEventListener('mouseover', (e) => { const f = e.target.closest('[data-font]'); if (f) previewFont(f.dataset.font); });
-  fonts.addEventListener('mouseleave', () => previewFont(style.font));
   $('saveStyleBtn').onclick = saveMyStyle;
   body.addEventListener('input', (e) => {
     const k = e.target.dataset.key;
