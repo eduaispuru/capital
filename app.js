@@ -423,6 +423,7 @@ function onInput() {
   clearTimeout(onInput.outline); onInput.outline = setTimeout(renderOutline, 300);
   scheduleCounts();
   markScenes();
+  scheduleSpell();
 }
 
 function editorRoot() { return document.querySelector('#editor .vditor-ir pre.vditor-reset'); }
@@ -438,21 +439,143 @@ function setText(md) {
   // "Palabras de esta sesión" cuenta desde que se abre el archivo
   state.baseWords = null;
   updateCounts();
+  scheduleSpell(300);
 }
 
 // Texto actual, venga del editor visual o del código fuente
 function currentText() { return state.source ? $('source').value : state.editor.getValue(); }
 
 /* ---------- Corrector ortográfico ---------- */
-// Vditor lo trae apagado; usamos el de Chrome en castellano (subrayado rojo y sugerencias con clic derecho)
-function applySpell() {
-  const on = pref('spell', true);
-  for (const el of [editorRoot(), $('source')]) {
-    if (!el) continue;
-    el.spellcheck = on;
-    el.lang = 'es';
+// Diccionario RLA-ES (español de Argentina) en spell-worker.js. A diferencia del de Chrome,
+// subraya solo después de una pausa al escribir y nunca la palabra donde está el cursor.
+// El subrayado usa CSS Custom Highlights, así que no toca el texto del editor.
+const spell = { worker: null, pending: new Map(), seq: 0, verdict: new Map(), ranges: [], timer: 0, paintTimer: 0 };
+const spellOn = () => pref('spell', true);
+// Palabras agregadas al diccionario, más algunas que usa la propia app
+const myWords = () => new Set(['Markdown', 'Enter', 'Ctrl', 'Shift', 'Tab', 'PDF', ...pref('spellWords', [])]);
+
+function spellAsk(msg) {
+  if (!spell.worker) {
+    spell.worker = new Worker('spell-worker.js');
+    spell.worker.onmessage = (e) => { const done = spell.pending.get(e.data.id); spell.pending.delete(e.data.id); if (done) done(e.data); };
   }
+  const id = ++spell.seq;
+  return new Promise((resolve) => { spell.pending.set(id, resolve); spell.worker.postMessage({ id, ...msg }); });
+}
+
+function applySpell() {
+  const on = spellOn();
+  const pre = editorRoot();
+  if (pre) { pre.spellcheck = false; pre.lang = 'es'; }
+  // En código fuente queda el de Chrome: ahí no se pueden dibujar subrayados propios
+  const ta = $('source');
+  ta.spellcheck = on;
+  ta.lang = 'es';
   $('spellItem').classList.toggle('checked', on);
+  if (on) scheduleSpell(0);
+  else { clearTimeout(spell.timer); spell.ranges = []; if (window.CSS && CSS.highlights) CSS.highlights.delete('capital-spell'); }
+}
+
+function scheduleSpell(delay = 900) { clearTimeout(spell.timer); spell.timer = setTimeout(runSpell, delay); }
+
+// Cada palabra del texto con su lugar, salteando marcas de Markdown, código y llamadas de nota
+function spellTokens() {
+  const pre = editorRoot();
+  const out = [];
+  if (!pre) return out;
+  const skip = '.vditor-ir__marker, .vditor-ir__marker--hide, .vditor-ir__preview, code, [data-type="code-block"], [data-type="math-block"], [data-type="html-block"], [data-type="footnotes-ref"]';
+  const walker = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => (n.parentElement.closest(skip) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+  });
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    for (const m of n.data.matchAll(/\p{L}+/gu)) {
+      const w = m[0];
+      // Siglas mezcladas como "McDonald" o "iPhone" no se revisan
+      if (w.length < 2 || /\p{Lu}/u.test(w.slice(1)) && w !== w.toUpperCase()) continue;
+      out.push({ node: n, start: m.index, end: m.index + w.length, word: w });
+    }
+  }
+  return out;
+}
+
+async function runSpell() {
+  if (!spellOn() || state.source || !(window.CSS && CSS.highlights)) return;
+  const mine = myWords();
+  const unknown = [...new Set(spellTokens().map((t) => t.word))].filter((w) => !spell.verdict.has(w) && !mine.has(w) && !mine.has(w.toLowerCase()));
+  if (unknown.length) {
+    const { wrong } = await spellAsk({ check: unknown });
+    const bad = new Set(wrong);
+    for (const w of unknown) spell.verdict.set(w, !bad.has(w));
+  }
+  paintSpell();
+}
+
+function paintSpell() {
+  if (!spellOn() || state.source || !(window.CSS && CSS.highlights)) return;
+  const mine = myWords();
+  const sel = getSelection();
+  const caret = sel.rangeCount ? sel.getRangeAt(0) : null;
+  spell.ranges = [];
+  for (const t of spellTokens()) {
+    if (spell.verdict.get(t.word) !== false || mine.has(t.word) || mine.has(t.word.toLowerCase())) continue;
+    // La palabra que se está escribiendo no se marca hasta salir de ella
+    if (caret && caret.startContainer === t.node && caret.startOffset >= t.start && caret.startOffset <= t.end) continue;
+    const r = new Range();
+    r.setStart(t.node, t.start);
+    r.setEnd(t.node, t.end);
+    spell.ranges.push(r);
+  }
+  CSS.highlights.set('capital-spell', new Highlight(...spell.ranges));
+}
+
+/* Menú de sugerencias (clic derecho sobre una palabra subrayada) */
+function spellRangeAt(x, y) {
+  const pos = document.caretRangeFromPoint && document.caretRangeFromPoint(x, y);
+  if (!pos) return null;
+  return spell.ranges.find((r) => r.startContainer === pos.startContainer && pos.startOffset >= r.startOffset && pos.startOffset <= r.endOffset) || null;
+}
+
+function closeSpellMenu() { $('spellMenu').hidden = true; }
+
+async function openSpellMenu(range, x, y) {
+  const menu = $('spellMenu');
+  const word = range.toString();
+  menu.innerHTML = '<p class="sm-word"></p><div class="sm-list"><span class="sm-wait">Buscando…</span></div><hr>' +
+    '<button type="button" data-act="add">Agregar al diccionario</button>';
+  menu.querySelector('.sm-word').textContent = word;
+  menu.hidden = false;
+  const place = () => {
+    menu.style.left = Math.min(x, innerWidth - menu.offsetWidth - 8) + 'px';
+    menu.style.top = (y + menu.offsetHeight + 8 > innerHeight ? y - menu.offsetHeight : y) + 'px';
+  };
+  place();
+  menu.onclick = (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    closeSpellMenu();
+    if (b.dataset.act === 'add') {
+      setPref('spellWords', [...myWords(), word]);
+      paintSpell();
+      toast('«' + word + '» agregada al diccionario');
+      return;
+    }
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    document.execCommand('insertText', false, b.dataset.word);
+  };
+  const { suggestions } = await spellAsk({ suggest: word });
+  if (menu.hidden || menu.querySelector('.sm-word').textContent !== word) return;
+  const list = menu.querySelector('.sm-list');
+  list.innerHTML = suggestions.length ? '' : '<span class="sm-wait">Sin sugerencias</span>';
+  for (const s of suggestions) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'sm-sug';
+    b.dataset.word = b.textContent = s;
+    list.append(b);
+  }
+  place();
 }
 
 /* ---------- Código fuente (Ctrl+/) ---------- */
@@ -484,6 +607,7 @@ function toggleSource() {
     document.body.dataset.source = 'no';
     paginate();
     focusEditor();
+    scheduleSpell(300);
   }
   desk.scrollTop = ratio * (desk.scrollHeight - desk.clientHeight);
   updatePosition();
@@ -1140,7 +1264,21 @@ $('tabFiles').onclick = () => showTab('files');
 $('tabOutline').onclick = () => showTab('outline');
 $('openFolderBtn').onclick = openFolder;
 $('openFileBtn').onclick = openOneFile;
-document.addEventListener('selectionchange', () => { markCurrentBlock(); updateSelection(); });
+document.addEventListener('selectionchange', () => {
+  markCurrentBlock();
+  updateSelection();
+  // Al salir de una palabra, se revisa (la que tenía el cursor no estaba marcada)
+  if (spell.ranges && spellOn()) { clearTimeout(spell.paintTimer); spell.paintTimer = setTimeout(paintSpell, 500); }
+});
+$('editor').addEventListener('contextmenu', (e) => {
+  const r = spellRangeAt(e.clientX, e.clientY);
+  if (!r) return;
+  e.preventDefault();
+  openSpellMenu(r, e.clientX, e.clientY);
+});
+document.addEventListener('mousedown', (e) => { if (!e.target.closest('#spellMenu')) closeSpellMenu(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSpellMenu(); });
+desk.addEventListener('scroll', closeSpellMenu, { passive: true });
 $('source').addEventListener('select', updateSelection);
 $('source').addEventListener('keyup', updateSelection);
 $('source').addEventListener('mouseup', updateSelection);

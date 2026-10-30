@@ -411,6 +411,21 @@ body[data-source="yes"] .book::before {
   content: "Código fuente · Ctrl+/ para volver"; position: absolute; top: 14px; right: 18px;
   font: italic 13px var(--font-side); color: var(--ink-faint);
 }
+/* Corrector: subrayado ondulado suave y menú de sugerencias */
+::highlight(capital-spell) { text-decoration: underline wavy rgb(176 62 50 / .7); text-decoration-thickness: 1px; text-decoration-skip-ink: none; }
+.spell-menu {
+  position: fixed; z-index: 50; min-width: 200px; max-width: 280px; padding: 6px;
+  background: #fbfaf7; color: var(--ink); border: 1px solid var(--side-line); border-radius: 6px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / .16); font: 15px var(--font-side);
+}
+.spell-menu .sm-word { margin: 2px 8px 6px; font: italic 13px var(--font-side); color: var(--ink-faint); text-decoration: line-through rgb(176 62 50 / .5); }
+.spell-menu .sm-list { display: grid; }
+.spell-menu button { display: block; width: 100%; text-align: left; padding: 5px 10px; border-radius: 4px; }
+.spell-menu button:hover { background: var(--hover); }
+.spell-menu .sm-sug { font: 17px var(--font-body); }
+.spell-menu .sm-wait { padding: 5px 10px; font-style: italic; color: var(--ink-faint); }
+.spell-menu hr { border: 0; border-top: 1px solid var(--side-line); margin: 5px 4px; }
+
 /* Botón flotante para ir al final: se esfuma cuando ya estás abajo */
 .to-end {
   position: fixed; right: 24px; bottom: calc(var(--status-h) + 14px); z-index: 20;
@@ -453,7 +468,8 @@ body[data-source="yes"] .book::before {
 /* ---------- Exportar a PDF: el navegador arma las páginas al tamaño real (ver @page en app.js) ---------- */
 @media print {
   html, body { height: auto; overflow: visible; background: #fff; display: block; }
-  .menubar, .sidebar, .drawer, .zoom, .toast, .statusbar, .to-end, .pages, #source, .book::before { display: none !important; }
+  ::highlight(capital-spell) { text-decoration: none; }
+  .menubar, .sidebar, .drawer, .zoom, .toast, .statusbar, .to-end, .spell-menu, .pages, #source, .book::before { display: none !important; }
   .shell { display: block; margin: 0 !important; }
   .desk { overflow: visible; padding: 0; background: none; }
   .book { width: auto !important; max-width: none; height: auto !important; margin: 0; background: none !important; box-shadow: none !important; }
