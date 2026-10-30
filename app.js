@@ -204,6 +204,7 @@ function paginate() {
   }
   renderOutline();
   schedulePosition();
+  updateToEnd();
 }
 
 // Página real para el PDF: mismo tamaño, márgenes y letra que en pantalla, en milímetros
@@ -1033,6 +1034,11 @@ function schedulePosition() {
   schedulePosition.frame = requestAnimationFrame(() => { schedulePosition.frame = 0; updatePosition(); });
 }
 
+// El botón "ir al final" se esfuma cuando ya se ve el final del texto
+function updateToEnd() {
+  $('toEnd').classList.toggle('gone', desk.scrollTop + desk.clientHeight >= desk.scrollHeight - 60);
+}
+
 function updateSelection() {
   let text = '';
   const ta = $('source');
@@ -1138,7 +1144,8 @@ document.addEventListener('selectionchange', () => { markCurrentBlock(); updateS
 $('source').addEventListener('select', updateSelection);
 $('source').addEventListener('keyup', updateSelection);
 $('source').addEventListener('mouseup', updateSelection);
-desk.addEventListener('scroll', schedulePosition, { passive: true });
+desk.addEventListener('scroll', () => { schedulePosition(); updateToEnd(); }, { passive: true });
+$('toEnd').onclick = () => desk.scrollTo({ top: desk.scrollHeight, behavior: 'smooth' });
 document.addEventListener('visibilitychange', () => { if (document.hidden && state.dirty && state.file) save(); });
 window.addEventListener('beforeunload', (e) => { if (state.dirty) { save(); e.preventDefault(); } });
 

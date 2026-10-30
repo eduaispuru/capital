@@ -1,6 +1,6 @@
 // Guarda la app en caché para que funcione sin conexión.
 // Al cambiar archivos de la app, subí VERSION para que se actualice.
-const VERSION = 'capital-v16';
+const VERSION = 'capital-v17';
 const CORE = [
   './',
   'index.html',
