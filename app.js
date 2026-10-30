@@ -88,6 +88,62 @@ async function kv(key, value) {
   });
 }
 
+/* ---------- Ajustes compartidos entre equipos ---------- */
+// Se guardan también en "capital-ajustes.json", dentro de la carpeta abierta. Si esa carpeta está en
+// Google Drive, las palabras del diccionario, los estilos propios y el estilo de cada archivo pasan
+// solos a la otra computadora. Al leer se mezclan: gana el cambio más reciente de cada cosa.
+const SYNC_FILE = 'capital-ajustes.json';
+const SYNC_KEYS = ['spellWords', 'myStyles', 'bookStyles'];
+
+function setSyncedPref(key, value) { setPref(key, value); scheduleSync(); }
+function scheduleSync() { clearTimeout(scheduleSync.timer); scheduleSync.timer = setTimeout(syncNow, 1500); }
+
+function mergeSync(a, b) {
+  const newer = (x, y) => (!x ? y : !y ? x : (y.t || 0) > (x.t || 0) ? y : x);
+  const byKey = (x = {}, y = {}) => { const out = { ...x }; for (const k in y) out[k] = newer(x[k], y[k]); return out; };
+  return {
+    spellWords: [...new Set([...(a.spellWords || []), ...(b.spellWords || [])])].sort((x, y) => x.localeCompare(y, 'es')),
+    myStyles: byKey(a.myStyles, b.myStyles),
+    bookStyles: byKey(a.bookStyles, b.bookStyles),
+  };
+}
+
+function syncNow() {
+  // Una sincronización por vez
+  syncNow.chain = (syncNow.chain || Promise.resolve()).then(syncOnce).catch((e) => console.warn('Ajustes compartidos:', e));
+  return syncNow.chain;
+}
+
+async function syncOnce() {
+  const root = state.root;
+  if (!root) return;
+  let remote = {};
+  try { remote = JSON.parse(await (await (await root.getFileHandle(SYNC_FILE)).getFile()).text()); } catch (e) { /* todavía no existe */ }
+  const local = Object.fromEntries(SYNC_KEYS.map((k) => [k, pref(k, k === 'spellWords' ? [] : {})]));
+  const merged = mergeSync(local, remote);
+  if (SYNC_KEYS.some((k) => JSON.stringify(merged[k]) !== JSON.stringify(local[k]))) {
+    for (const k of SYNC_KEYS) setPref(k, merged[k]);
+    applySynced();
+  }
+  if (SYNC_KEYS.some((k) => JSON.stringify(merged[k]) !== JSON.stringify(remote[k]))) {
+    const w = await (await root.getFileHandle(SYNC_FILE, { create: true })).createWritable();
+    await w.write(JSON.stringify({ app: 'Capital', nota: 'Ajustes de Capital compartidos entre tus equipos. No hace falta abrirlo.', ...merged }, null, 1));
+    await w.close();
+  }
+}
+
+// Lo que llegó del otro equipo se ve enseguida
+function applySynced() {
+  renderPresets();
+  paintSpell();
+  const b = bookOf(state.file);
+  const saved = b && pref('bookStyles', {})[b.key];
+  if (saved) {
+    const { t, ...s } = saved;
+    if (JSON.stringify({ ...STYLE_DEFAULTS, ...s }) !== JSON.stringify(style)) loadBookStyle();
+  }
+}
+
 /* ---------- Avisos ---------- */
 function toast(msg) {
   const t = $('toast'); t.textContent = msg; t.hidden = false;
@@ -117,9 +173,13 @@ function applyStyle() {
   d.scene = style.scene;
   d.notes = style.notes;
   setPref('style', style);
-  // Cada archivo recuerda su estilo
+  // Cada archivo recuerda su estilo (con la hora del cambio, para saber cuál es el más nuevo entre equipos)
   const b = bookOf(state.file);
-  if (b) { const all = pref('bookStyles', {}); all[b.key] = style; setPref('bookStyles', all); }
+  if (b) {
+    const all = pref('bookStyles', {});
+    const { t, ...old } = all[b.key] || {};
+    if (JSON.stringify(old) !== JSON.stringify(style)) { all[b.key] = { ...style, t: Date.now() }; setSyncedPref('bookStyles', all); }
+  }
   layout();
 }
 
@@ -137,7 +197,7 @@ function loadBookStyle() {
   const b = bookOf(state.file);
   const all = pref('bookStyles', {});
   const saved = b && (all[b.key] || (b.folder !== undefined && all[b.folder]));
-  if (saved) style = { ...STYLE_DEFAULTS, ...saved };
+  if (saved) { const { t, ...s } = saved; style = { ...STYLE_DEFAULTS, ...s }; }
   $('drawerBook').textContent = b ? 'Estilo de «' + b.name + '»' : '';
   refreshStyle();
 }
@@ -325,8 +385,10 @@ function buildDrawer() {
   syncDrawer();
 }
 /* Estilos propios: guardan todas las opciones del panel con un nombre */
-function myStyles() { return pref('myStyles', {}); }
+// Los borrados quedan marcados (deleted) para que el otro equipo también los borre
+function myStyles() { return Object.fromEntries(Object.entries(pref('myStyles', {})).filter(([, m]) => !m.deleted)); }
 function renderPresets() {
+  if (!$('presetGrid')) return;
   const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   $('presetGrid').innerHTML =
     Object.entries(PRESETS).map(([id, p]) =>
@@ -351,7 +413,7 @@ function saveMyStyle() {
     if (!ok || !name) return;
     const id = 'mine-' + Date.now().toString(36);
     const { preset, ...values } = style;
-    setPref('myStyles', { ...myStyles(), [id]: { name, values } });
+    setSyncedPref('myStyles', { ...pref('myStyles', {}), [id]: { name, values, t: Date.now() } });
     style.preset = id;
     applyStyle();
     renderPresets();
@@ -364,10 +426,10 @@ function saveMyStyle() {
   input.addEventListener('blur', () => finish(true));
 }
 function deleteMyStyle(id) {
-  const all = myStyles();
-  if (!all[id] || !confirm('¿Borrar el estilo «' + all[id].name + '»? Tus textos no cambian.')) return;
-  delete all[id];
-  setPref('myStyles', all);
+  const all = pref('myStyles', {});
+  if (!all[id] || all[id].deleted || !confirm('¿Borrar el estilo «' + all[id].name + '»? Tus textos no cambian.')) return;
+  all[id] = { deleted: true, t: Date.now() };
+  setSyncedPref('myStyles', all);
   if (style.preset === id) { style.preset = null; applyStyle(); }
   renderPresets();
 }
@@ -554,7 +616,7 @@ async function openSpellMenu(range, x, y) {
     if (!b) return;
     closeSpellMenu();
     if (b.dataset.act === 'add') {
-      setPref('spellWords', [...myWords(), word]);
+      setSyncedPref('spellWords', [...new Set([...pref('spellWords', []), word])]);
       paintSpell();
       toast('«' + word + '» agregada al diccionario');
       return;
@@ -775,6 +837,7 @@ async function mountRoot(handle) {
   tree.append(li);
   const ul = li.querySelector('ul');
   setTarget(handle, ul, '', li.querySelector('.row'));
+  await syncNow();
   await refreshDir(handle, ul, '');
   const last = pref('lastFile', null);
   if (last) {
@@ -1316,7 +1379,11 @@ $('source').addEventListener('keyup', updateSelection);
 $('source').addEventListener('mouseup', updateSelection);
 desk.addEventListener('scroll', () => { schedulePosition(); updateToEnd(); }, { passive: true });
 $('toEnd').onclick = goToEnd;
-document.addEventListener('visibilitychange', () => { if (document.hidden && state.dirty && state.file) save(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && state.dirty && state.file) save();
+  // Al volver a la app, traer lo que haya cambiado en la otra computadora
+  if (!document.hidden) syncNow();
+});
 window.addEventListener('beforeunload', (e) => { if (state.dirty) { save(); e.preventDefault(); } });
 
 /* ---------- Arranque ---------- */
