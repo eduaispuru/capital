@@ -184,6 +184,8 @@ body[data-paged="yes"] .vditor-ir pre.vditor-reset {
 body[data-paged="yes"] .vditor-reset > h1,
 body[data-paged="yes"][data-level="2"] .vditor-reset > h2 { break-before: column; }
 body[data-paged="yes"] .vditor-reset > :is(h1, h2, h3) { break-after: avoid; }
+/* "Todos los títulos": cada título empieza hoja, salvo si va justo debajo de otro título */
+body[data-paged="yes"][data-breaks="titulos"] .vditor-reset > :is(h1, h2, h3, h4, h5, h6):not(:is(h1, h2, h3, h4, h5, h6) + *) { break-before: column; }
 
 /* ---------- Tipografía del texto ---------- */
 .vditor-reset {
@@ -407,6 +409,7 @@ body[data-source="yes"] .book::before {
   .vditor-reset { font-size: var(--fs-print) !important; color: #000 !important; }
   .vditor-ir pre.vditor-reset { column-count: auto !important; column-height: auto !important; column-wrap: nowrap !important; row-gap: normal !important; orphans: 2; widows: 2; }
   .vditor-reset > h1, body[data-level="2"] .vditor-reset > h2 { break-before: page !important; }
+  body[data-breaks="titulos"] .vditor-reset > :is(h1, h2, h3, h4, h5, h6):not(:is(h1, h2, h3, h4, h5, h6) + *) { break-before: page !important; }
   body[data-chapter-space="yes"] :is(body[data-level="1"] .vditor-reset > h1, body[data-level="2"] .vditor-reset > h2) { padding-top: var(--chapter-space-print) !important; }
   body[data-level="2"] .vditor-reset > h1 { padding-top: var(--title-space-print) !important; break-after: page; }
   .vditor-reset hr { break-after: page !important; visibility: hidden; height: 0 !important; margin: 0 !important; border: 0 !important; box-shadow: none !important; background: none !important; }

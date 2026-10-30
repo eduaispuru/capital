@@ -38,6 +38,7 @@ const OPTIONS = {
   dropLines: [['2', '2 líneas'], ['3', '3 líneas'], ['4', '4 líneas']],
   chapter: [['versalitas', 'Versalitas'], ['ornamento', 'Con ornamento'], ['cursiva', 'Cursiva'], ['moderno', 'Moderno']],
   level: [['auto', 'Automático'], ['1', '#'], ['2', '##']],
+  breaks: [['titulos', 'Todos los títulos'], ['capitulos', 'Solo capítulos']],
   olStyle: [['decimal', '1.'], ['paren', '1)'], ['alpha', 'a.'], ['roman', 'i.']],
   ulStyle: [['disc', '•'], ['dash', '—'], ['circle', '◦']],
   para: [['sangria', 'Sangría'], ['amplia', 'Sangría amplia'], ['espacio', 'Espacio entre párrafos']],
@@ -52,7 +53,7 @@ const PRESETS = {
 const PAGE_SIZES = { a5: [148, 210], '6x9': [152.4, 228.6], a4: [210, 297] };
 const STYLE_KEYS = ['font', 'size', 'leading', 'dropcap', 'firstline', 'chapter', 'para', 'justify'];
 const presetValues = (p) => Object.fromEntries(STYLE_KEYS.map((k) => [k, p[k]]));
-const STYLE_DEFAULTS = { preset: 'tinta', ...presetValues(PRESETS.tinta), page: 'a5', folios: true, chapterSpace: true, level: 'auto', dropLines: '3', olStyle: 'decimal', ulStyle: 'disc' };
+const STYLE_DEFAULTS = { preset: 'tinta', ...presetValues(PRESETS.tinta), page: 'a5', folios: true, chapterSpace: true, level: 'auto', breaks: 'titulos', dropLines: '3', olStyle: 'decimal', ulStyle: 'disc' };
 let style = { ...STYLE_DEFAULTS };
 
 /* ---------- Guardado de preferencias ---------- */
@@ -102,6 +103,7 @@ function applyStyle() {
   d.firstline = style.firstline ? 'yes' : 'no';
   d.folios = style.folios ? 'yes' : 'no';
   d.chapterSpace = style.chapterSpace ? 'yes' : 'no';
+  d.breaks = style.breaks;
   d.ol = style.olStyle;
   d.ul = style.ulStyle;
   setPref('style', style);
@@ -247,6 +249,8 @@ function buildDrawer() {
     seg('chapter', 'Títulos de capítulo') + check('chapterSpace', 'Espacio antes de cada capítulo') + '</section>' +
     seg('level', 'Los capítulos se marcan con') +
       '<p class="hint">En automático, si hay un solo # lo toma como título del libro y los capítulos pasan a ser ##.</p></section>' +
+    seg('breaks', 'Hoja nueva antes de') +
+      '<p class="hint">Un título que va justo debajo de otro sigue en la misma hoja.</p></section>' +
     seg('para', 'Párrafos') + check('justify', 'Texto justificado') + '</section>' +
     seg('olStyle', 'Listas numeradas') +
       '<p class="hint">Escribí 1 y un espacio al principio de un párrafo para empezar una lista; con Enter sigue sola.</p></section>' +
@@ -261,7 +265,7 @@ function buildDrawer() {
     const f = e.target.closest('[data-font]');
     if (f) { style.font = f.dataset.font; style.preset = null; return refreshStyle(); }
     const b = e.target.closest('.seg button');
-    if (b) { style[b.parentElement.dataset.key] = b.dataset.val; if (!['page', 'level', 'dropLines', 'olStyle', 'ulStyle'].includes(b.parentElement.dataset.key)) style.preset = null; refreshStyle(); }
+    if (b) { style[b.parentElement.dataset.key] = b.dataset.val; if (!['page', 'level', 'breaks', 'dropLines', 'olStyle', 'ulStyle'].includes(b.parentElement.dataset.key)) style.preset = null; refreshStyle(); }
   });
   body.addEventListener('input', (e) => {
     const k = e.target.dataset.key;
@@ -287,6 +291,7 @@ function toggleStyle() {
   d.hidden = !d.hidden;
   $('styleBtn').setAttribute('aria-pressed', !d.hidden);
   document.body.classList.toggle('drawer-open', !d.hidden);
+  $('styleToggle').setAttribute('aria-pressed', !d.hidden);
 }
 
 /* ---------- Editor ---------- */
