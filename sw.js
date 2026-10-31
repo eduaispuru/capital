@@ -1,6 +1,6 @@
 // Guarda la app en caché para que funcione sin conexión.
 // Al cambiar archivos de la app, subí VERSION para que se actualice.
-const VERSION = 'capital-v21';
+const VERSION = 'capital-v22';
 const CORE = [
   './',
   'index.html',
@@ -14,6 +14,7 @@ const CORE = [
   'manifest.webmanifest',
   'icons/icon-192.png',
   'icons/icon-512.png',
+  'icons/icon-maskable-512.png',
   'vendor/vditor/dist/index.min.js',
   'vendor/vditor/dist/index.css',
   'vendor/vditor/dist/js/lute/lute.min.js',
