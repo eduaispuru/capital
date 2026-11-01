@@ -10,11 +10,6 @@
 <link rel="stylesheet" href="vendor/vditor/dist/index.css">
 <link rel="stylesheet" href="fonts.css">
 <link rel="stylesheet" href="styles.css">
-<link rel="stylesheet" href="gabinete.css" id="gabineteCss">
-<script>
-  // Diseño Gabinete o clásico, elegido antes de dibujar para que no parpadee
-  try { if (localStorage.getItem('tinta:ui') === '"clasico"') document.getElementById('gabineteCss').disabled = true; } catch (e) {}
-</script>
 </head>
 <body>
 
@@ -43,7 +38,6 @@
       <button type="button" role="menuitem" data-cmd="showFiles">Archivos</button>
       <button type="button" role="menuitem" data-cmd="showOutline">Índice</button>
       <hr>
-      <button type="button" role="menuitem" data-cmd="toggleDesign" id="designItem" class="toggle">Diseño Gabinete</button>
       <button type="button" role="menuitem" data-cmd="focusMode">Modo concentración<kbd>F8</kbd></button>
     </div>
   </div>

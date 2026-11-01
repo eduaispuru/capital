@@ -1421,8 +1421,6 @@ function syncBars() {
   $('sideItem').classList.toggle('checked', side);
   $('zoomItem').classList.toggle('checked', zoom);
   $('statusItem').classList.toggle('checked', !document.body.classList.contains('no-status'));
-  $('designItem').classList.toggle('checked', !$('gabineteCss').disabled);
-  document.querySelector('meta[name="theme-color"]').content = $('gabineteCss').disabled ? '#201f1d' : '#f7f7f5';
   $('sideToggle').setAttribute('aria-pressed', side);
   $('zoomToggle').setAttribute('aria-pressed', zoom);
 }
@@ -1463,13 +1461,6 @@ const COMMANDS = {
   newFolder: () => askName('folder'),
   save,
   toggleSidebar: () => { shell.classList.toggle('no-side'); setPref('side', !shell.classList.contains('no-side')); syncBars(); },
-  toggleDesign: () => {
-    const css = $('gabineteCss');
-    css.disabled = !css.disabled;
-    setPref('ui', css.disabled ? 'clasico' : 'gabinete');
-    syncBars(); layout();
-    toast(css.disabled ? 'Diseño clásico' : 'Diseño Gabinete');
-  },
   toggleStatus: () => { const off = document.body.classList.toggle('no-status'); setPref('status', !off); syncBars(); },
   toggleSource,
   exportPdf,
