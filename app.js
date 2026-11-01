@@ -1422,7 +1422,7 @@ function syncBars() {
   $('zoomItem').classList.toggle('checked', zoom);
   $('statusItem').classList.toggle('checked', !document.body.classList.contains('no-status'));
   $('designItem').classList.toggle('checked', !$('gabineteCss').disabled);
-  document.querySelector('meta[name="theme-color"]').content = $('gabineteCss').disabled ? '#201f1d' : '#f2ebdc';
+  document.querySelector('meta[name="theme-color"]').content = $('gabineteCss').disabled ? '#201f1d' : '#f7f7f5';
   $('sideToggle').setAttribute('aria-pressed', side);
   $('zoomToggle').setAttribute('aria-pressed', zoom);
 }
