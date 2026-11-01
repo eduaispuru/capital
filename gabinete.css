@@ -112,9 +112,10 @@ body { font-family: var(--g-sans); }
 .row.dir { font: 600 13px var(--g-sans); letter-spacing: 0; text-transform: none; color: var(--tinta-suave); padding: 14px 0 6px; }
 .row.dir .caret { font: 13px var(--g-sans); color: var(--tinta-suave); }
 .row.dir .count { font: italic 400 16px var(--g-display); color: var(--bermellon-hondo); }
-.row.file { font: 400 20px/1.15 var(--g-display); padding: 5px 0 5px 18px; }
+/* Los nombres de archivo van en la letra de la interfaz: la serif de titulares es angosta y a este tamaño se aprieta */
+.row.file { font: 400 15px/20px var(--g-sans); padding: 6px 0 6px 18px; }
 .row.file:hover { color: var(--bermellon-hondo); }
-.row.file.active { font-style: normal; color: var(--bermellon-hondo); }
+.row.file.active { font-style: normal; font-weight: 600; color: var(--bermellon-hondo); }
 .row.file.active::before { left: 3px; top: 50%; bottom: auto; width: 8px; height: 8px; margin-top: -4px; border-radius: 9999px; background: var(--bermellon); clip-path: none; }
 .new-input { font: 16px var(--g-sans); border-bottom-color: var(--tinta-suave); }
 .side-foot { border-top-color: var(--linea); }
@@ -122,13 +123,12 @@ body { font-family: var(--g-sans); }
 .side-foot button:hover { color: var(--bermellon-hondo); }
 
 /* Índice */
-.toc { font: 400 19px/1.2 var(--g-display); }
+.toc { font: 400 15px/20px var(--g-sans); }
 .toc:hover { color: var(--bermellon-hondo); }
 .toc .dots { border-bottom-color: var(--linea); }
 .toc .pg { font: italic 400 18px var(--g-display); color: var(--bermellon-hondo); font-variant-numeric: lining-nums tabular-nums; }
 .toc-caret { font: 13px var(--g-sans); }
-.depth-1 > .toc-row .toc { font-size: 17px; }
-.depth-2 > .toc-row .toc { font-size: 16px; }
+.depth-1 > .toc-row .toc, .depth-2 > .toc-row .toc { font-size: 14px; font-style: normal; }
 .outline .none { font: italic 400 18px var(--g-display); color: var(--tinta-suave); }
 
 /* ---------- Escritorio: el papel hondo, y la hoja encima como un recorte pegado ---------- */
