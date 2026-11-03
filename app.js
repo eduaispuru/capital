@@ -1549,6 +1549,25 @@ window.addEventListener('beforeunload', (e) => { if (state.dirty) { save(); e.pr
   $('source').addEventListener('input', () => { fitSource(); onInput(); });
   $('source').addEventListener('beforeinput', onSourceBeforeInput);
   $('editor').addEventListener('beforeinput', onEditorBeforeInput, true);
+  // Al escribir, Chrome a veces corre la vista aunque el cursor ya se veía (pasa con el texto
+  // repartido en páginas y las notas al pie). Si el cursor se veía donde estaba la vista, vuelve ahí.
+  // Rueda, clic o teclas de desplazamiento son movimientos tuyos y no se tocan.
+  $('editor').addEventListener('beforeinput', () => { state.typed = { at: performance.now(), top: desk.scrollTop }; }, true);
+  const userScroll = () => { state.typed = null; };
+  ['wheel', 'mousedown', 'touchstart'].forEach((ev) => document.addEventListener(ev, userScroll, { capture: true, passive: true }));
+  document.addEventListener('keydown', (e) => { if (/^(Page|Home|End|Arrow)/.test(e.key)) userScroll(); }, true);
+  desk.addEventListener('scroll', () => {
+    const t = state.typed;
+    if (!t || performance.now() - t.at > 1500 || desk.scrollTop === t.top) return;
+    const sel = getSelection();
+    const root = editorRoot();
+    if (!sel.rangeCount || !root || !root.contains(sel.anchorNode)) return;
+    const c = sel.getRangeAt(0).getBoundingClientRect();
+    const d = desk.getBoundingClientRect();
+    const shift = desk.scrollTop - t.top;
+    if (c.height && c.top + shift >= d.top + 8 && c.bottom + shift <= d.bottom - 8) desk.scrollTop = t.top;
+    else t.top = desk.scrollTop;
+  });
   $('editor').addEventListener('keydown', onEditorKeydown, true);
   $('source').addEventListener('keydown', (e) => {
     const ta = e.target;
@@ -1573,6 +1592,22 @@ window.addEventListener('beforeunload', (e) => { if (state.dirty) { save(); e.pr
   layout();
   updateCounts();
   new ResizeObserver(() => paginate()).observe(editorRoot());
+  // En cada tecla el editor reemplaza el párrafo por uno nuevo, sin el ajuste que le hacía lugar
+  // a las notas al pie. Se lo pasa al nuevo antes de dibujar: si no, el párrafo vuelve a la página
+  // anterior y la vista salta con él.
+  new MutationObserver((records) => {
+    for (const m of records) {
+      const added = [...m.addedNodes].filter((n) => n.nodeType === 1 && !n.hasAttribute('data-fn-fit'));
+      for (const old of m.removedNodes) {
+        if (old.nodeType !== 1 || !old.hasAttribute('data-fn-fit')) continue;
+        const i = added.findIndex((n) => n.tagName === old.tagName);
+        if (i < 0) continue;
+        const nu = added.splice(i, 1)[0];
+        nu.setAttribute('style', old.getAttribute('style') || '');
+        nu.setAttribute('data-fn-fit', '');
+      }
+    }
+  }).observe(editorRoot(), { childList: true });
   // El ancho del escritorio cambia al mostrar u ocultar la barra lateral o al cambiar la ventana
   let lastDeskW = 0;
   new ResizeObserver(() => { if (desk.clientWidth && desk.clientWidth !== lastDeskW) { lastDeskW = desk.clientWidth; layout(); } }).observe(desk);
