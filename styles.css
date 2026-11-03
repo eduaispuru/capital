@@ -148,7 +148,7 @@ button { font: inherit; color: inherit; background: none; border: 0; cursor: poi
 .outline .none { color: var(--ink-faint); font: italic 15px var(--font-side); padding: 8px 0; }
 
 /* ---------- Escritorio y páginas ---------- */
-.desk { overflow-y: auto; overflow-x: auto; background: linear-gradient(100deg, var(--desk) 0%, var(--desk-light) 100%); padding: 48px 16px 120px; min-width: 0; }
+.desk { overflow-anchor: none; overflow-y: auto; overflow-x: auto; background: linear-gradient(100deg, var(--desk) 0%, var(--desk-light) 100%); padding: 48px 16px 120px; min-width: 0; }
 .book { position: relative; width: var(--page-w); margin: 0 auto; }
 .pages { position: absolute; inset: 0; pointer-events: none; }
 .page {
