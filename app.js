@@ -93,7 +93,7 @@ async function kv(key, value) {
 // Google Drive, las palabras del diccionario, los estilos propios y el estilo de cada archivo pasan
 // solos a la otra computadora. Al leer se mezclan: gana el cambio más reciente de cada cosa.
 const SYNC_FILE = 'capital-ajustes.json';
-const SYNC_KEYS = ['spellWords', 'myStyles', 'bookStyles'];
+const SYNC_KEYS = ['spellWords', 'myStyles', 'bookStyles', 'versionDays'];
 
 function setSyncedPref(key, value) { setPref(key, value); scheduleSync(); }
 function scheduleSync() { clearTimeout(scheduleSync.timer); scheduleSync.timer = setTimeout(syncNow, 1500); }
@@ -105,6 +105,7 @@ function mergeSync(a, b) {
     spellWords: [...new Set([...(a.spellWords || []), ...(b.spellWords || [])])].sort((x, y) => x.localeCompare(y, 'es')),
     myStyles: byKey(a.myStyles, b.myStyles),
     bookStyles: byKey(a.bookStyles, b.bookStyles),
+    versionDays: newer(a.versionDays, b.versionDays) || {},
   };
 }
 
@@ -831,6 +832,7 @@ async function save() {
     await w.write(text);
     await w.close();
     if (currentText() === text) { state.dirty = false; setSaveState('Guardado'); }
+    snapshot(text);
   } catch (e) {
     setSaveState('No se pudo guardar');
     toast('No se pudo guardar: ' + (e.message || e.name));
@@ -852,11 +854,265 @@ async function saveAs() {
   } catch (e) { if (e.name !== 'AbortError') toast('No se pudo guardar: ' + e.message); }
 }
 
+/* ---------- Versiones ---------- */
+// Como la recuperación de archivos de Obsidian: mientras escribís se guarda una copia del texto
+// cada 5 minutos como mucho (solo si cambió). Van a la carpeta ".capital-versiones", dentro de la
+// carpeta abierta, así Google Drive las pasa a la otra computadora. Se borran pasados los días
+// elegidos, salvo la última de cada archivo, que se conserva siempre.
+const VERSIONS_DIR = '.capital-versiones';
+const VERSION_GAP = 5 * 60 * 1000;
+const VERSION_DAYS = [7, 15, 30, 45, 60, 100, 200, 300];
+const versions = { last: new Map(), pruned: new Set() };
+const versionDays = () => (pref('versionDays', {}).days || 7);
+
+const pad2 = (n) => String(n).padStart(2, '0');
+const versionName = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}-${pad2(d.getMinutes())}-${pad2(d.getSeconds())}.md`;
+function versionDate(name) {
+  const m = name.match(/^(\d{4})-(\d\d)-(\d\d) (\d\d)-(\d\d)-(\d\d)/);
+  return m ? new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]) : null;
+}
+
+// Carpeta de versiones de un archivo: la misma ruta que el archivo, dentro de .capital-versiones
+async function versionsDir(path, create) {
+  let dir = await state.root.getDirectoryHandle(VERSIONS_DIR, { create });
+  for (const part of path.split('/')) dir = await dir.getDirectoryHandle(part, { create });
+  return dir;
+}
+async function listVersions(path) {
+  const dir = await versionsDir(path, false).catch(() => null);
+  if (!dir) return [];
+  const out = [];
+  for await (const h of dir.values()) {
+    const date = h.kind === 'file' && versionDate(h.name);
+    if (date) out.push({ handle: h, date });
+  }
+  return out.sort((a, b) => b.date - a.date || b.handle.name.localeCompare(a.handle.name));
+}
+const readVersion = async (v) => (await v.handle.getFile()).text();
+
+async function writeVersion(path, text, date = new Date()) {
+  const dir = await versionsDir(path, true);
+  let name = versionName(date);
+  if (await dir.getFileHandle(name).then(() => true, () => false)) name = name.replace('.md', ' (2).md');
+  const w = await (await dir.getFileHandle(name, { create: true })).createWritable();
+  await w.write(text);
+  await w.close();
+  versions.last.set(path, { at: Date.now(), text });
+}
+
+// Se llama después de cada guardado. `force` guarda aunque no hayan pasado 5 minutos.
+async function snapshot(text, force = false) {
+  const file = state.file;
+  if (!state.root || !file || file.single) return;
+  const path = file.path;
+  try {
+    let last = versions.last.get(path);
+    if (!last) {
+      // Primera vez en esta sesión: se compara con la última versión guardada (de esta u otra computadora)
+      const [latest] = await listVersions(path);
+      last = latest ? { at: latest.date.getTime(), text: await readVersion(latest) } : { at: 0, text: null };
+      // El texto tal como estaba al abrirlo también queda guardado, para poder volver a antes de tocarlo
+      if (file.opened != null && file.opened !== last.text && file.opened !== text) {
+        await writeVersion(path, file.opened, new Date(file.openedAt || Date.now() - 1000));
+        last = versions.last.get(path);
+      }
+      versions.last.set(path, last);
+    }
+    if (last.text === text) return;
+    if (!force && Date.now() - last.at < VERSION_GAP) return;
+    await writeVersion(path, text);
+    pruneVersions(path);
+  } catch (e) { console.warn('Versiones:', e); }
+}
+
+// Borra las versiones más viejas que los días elegidos (la última de cada archivo nunca)
+async function pruneVersions(path) {
+  if (versions.pruned.has(path)) return;
+  versions.pruned.add(path);
+  const limit = Date.now() - versionDays() * 86400000;
+  const list = await listVersions(path).catch(() => []);
+  const dir = await versionsDir(path, false).catch(() => null);
+  if (!dir) return;
+  for (const v of list.slice(1)) if (v.date.getTime() < limit) await dir.removeEntry(v.handle.name).catch(() => {});
+}
+// Al abrir la carpeta se revisan todas, también las de archivos que no abrís seguido
+async function pruneAllVersions() {
+  const root = state.root;
+  const base = root && await root.getDirectoryHandle(VERSIONS_DIR).catch(() => null);
+  if (!base) return;
+  const walk = async (dir, path) => {
+    let hasVersions = false;
+    for await (const h of dir.values()) {
+      if (h.kind !== 'directory') { if (versionDate(h.name)) hasVersions = true; continue; }
+      await walk(h, path ? path + '/' + h.name : h.name);
+    }
+    if (hasVersions) await pruneVersions(path);
+  };
+  await walk(base, '').catch((e) => console.warn('Versiones:', e));
+}
+
+/* Diferencias entre dos textos: por párrafos y, dentro de los párrafos cambiados, por palabras */
+function diffSeq(a, b) {
+  // Algoritmo de Myers: devuelve [['=', x] | ['-', x] | ['+', x]]
+  const n = a.length, m = b.length, max = n + m;
+  const v = new Map([[1, 0]]);
+  const trace = [];
+  for (let d = 0; d <= max; d++) {
+    trace.push(new Map(v));
+    for (let k = -d; k <= d; k += 2) {
+      let x = (k === -d || (k !== d && v.get(k - 1) < v.get(k + 1))) ? v.get(k + 1) : v.get(k - 1) + 1;
+      let y = x - k;
+      while (x < n && y < m && a[x] === b[y]) { x++; y++; }
+      v.set(k, x);
+      if (x >= n && y >= m) {
+        const out = [];
+        for (let dd = d; dd > 0; dd--) {
+          const vv = trace[dd];
+          const kk = x - y;
+          const prevK = (kk === -dd || (kk !== dd && vv.get(kk - 1) < vv.get(kk + 1))) ? kk + 1 : kk - 1;
+          const px = vv.get(prevK), py = px - prevK;
+          while (x > px && y > py) { out.push(['=', a[--x]]); y--; }
+          if (x === px) out.push(['+', b[--y]]); else out.push(['-', a[--x]]);
+        }
+        while (x > 0) { out.push(['=', a[--x]]); y--; }
+        return out.reverse();
+      }
+    }
+    if (d > 1000) break;
+  }
+  return null; // demasiado distintos: se muestra todo como reemplazado
+}
+function diffParagraphs(oldText, newText) {
+  const a = oldText.split('\n'), b = newText.split('\n');
+  return diffSeq(a, b) || [...a.map((x) => ['-', x]), ...b.map((x) => ['+', x])];
+}
+const words = (s) => s.match(/\s+|[^\s]+/g) || [];
+
+// Arma el HTML de los cambios. `from` es la versión, `to` el texto de ahora: lo tachado está en la
+// versión y no en el texto de ahora; lo subrayado está ahora y no estaba en la versión.
+function renderDiff(from, to) {
+  const ops = diffParagraphs(from, to);
+  const esc = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const blocks = [];
+  for (let i = 0; i < ops.length;) {
+    if (ops[i][0] === '=') { blocks.push({ same: true, text: ops[i][1] }); i++; continue; }
+    const del = [], add = [];
+    while (i < ops.length && ops[i][0] !== '=') { (ops[i][0] === '-' ? del : add).push(ops[i][1]); i++; }
+    const pairs = Math.max(del.length, add.length);
+    for (let j = 0; j < pairs; j++) {
+      const x = del[j], y = add[j];
+      let html;
+      if (x != null && y != null) {
+        const w = diffSeq(words(x), words(y));
+        html = w ? w.map(([op, t]) => op === '=' ? esc(t) : `<${op === '-' ? 'del' : 'ins'}>${esc(t)}</${op === '-' ? 'del' : 'ins'}>`).join('')
+          : `<del>${esc(x)}</del> <ins>${esc(y)}</ins>`;
+      } else html = x != null ? `<del>${esc(x)}</del>` : `<ins>${esc(y)}</ins>`;
+      if ((x || '').trim() || (y || '').trim()) blocks.push({ same: false, html });
+    }
+  }
+  // Solo se muestran los párrafos cambiados, con uno de contexto antes y después
+  const show = blocks.map((b, i) => !b.same || (blocks[i - 1] && !blocks[i - 1].same) || (blocks[i + 1] && !blocks[i + 1].same));
+  let html = '', skipped = 0, changes = 0;
+  const flush = () => { if (skipped) html += `<p class="vd-skip">… ${plural(skipped, 'párrafo igual', 'párrafos iguales')} …</p>`; skipped = 0; };
+  blocks.forEach((b, i) => {
+    if (b.same && !b.text.trim()) return;
+    if (!show[i]) { skipped++; return; }
+    flush();
+    if (!b.same) changes++;
+    html += `<p class="${b.same ? 'vd-same' : 'vd-changed'}">${b.same ? esc(b.text) : b.html}</p>`;
+  });
+  flush();
+  return changes ? html : '<p class="vd-none">Esta versión es igual al texto de ahora.</p>';
+}
+
+/* Ventana de versiones */
+const vstate = { list: [], sel: -1, text: '', mode: 'changes' };
+
+function fmtVersionDate(d) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const day = new Date(d); day.setHours(0, 0, 0, 0);
+  const diff = Math.round((today - day) / 86400000);
+  const hour = d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  if (diff === 0) return 'Hoy, ' + hour;
+  if (diff === 1) return 'Ayer, ' + hour;
+  return d.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short', year: day.getFullYear() === today.getFullYear() ? undefined : 'numeric' }) + ', ' + hour;
+}
+
+async function openVersions() {
+  closeMenus();
+  const box = $('versions');
+  box.hidden = false;
+  const file = state.file;
+  $('vTitle').textContent = file ? 'Versiones de «' + file.handle.name.replace(/\.(md|markdown|txt)$/i, '') + '»' : 'Versiones';
+  $('vDays').innerHTML = VERSION_DAYS.map((d) => `<button type="button" data-days="${d}" aria-pressed="${d === versionDays()}">${d}</button>`).join('');
+  $('vList').innerHTML = '';
+  $('vView').innerHTML = '';
+  $('vActions').hidden = true;
+  if (!state.root || !file || file.single) {
+    $('vView').innerHTML = '<p class="vd-none">Las versiones se guardan en la carpeta que abriste con <b>Abrir carpeta</b>. Abrí la carpeta y elegí el texto ahí.</p>';
+    return;
+  }
+  if (state.dirty) await save();
+  await snapshot(currentText());
+  vstate.list = await listVersions(file.path).catch(() => []);
+  vstate.sel = -1;
+  if (!vstate.list.length) {
+    $('vView').innerHTML = '<p class="vd-none">Todavía no hay versiones de este texto. Se guarda una cada 5 minutos mientras escribís.</p>';
+    return;
+  }
+  const ul = $('vList');
+  vstate.list.forEach((v, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'v-item';
+    b.textContent = fmtVersionDate(v.date);
+    b.onclick = () => selectVersion(i);
+    ul.append(b);
+  });
+  selectVersion(vstate.list.length > 1 ? 1 : 0);
+}
+
+async function selectVersion(i) {
+  vstate.sel = i;
+  [...$('vList').children].forEach((b, j) => b.setAttribute('aria-pressed', j === i));
+  const v = vstate.list[i];
+  vstate.text = await readVersion(v);
+  $('vActions').hidden = false;
+  $('vInfo').textContent = plural(countWords(plainText(vstate.text)), 'palabra', 'palabras') + (i === 0 ? ' · la más reciente' : '');
+  showVersion();
+}
+
+function showVersion() {
+  [...$('vMode').children].forEach((b) => b.setAttribute('aria-pressed', b.dataset.mode === vstate.mode));
+  const view = $('vView');
+  if (vstate.mode === 'changes') view.innerHTML = renderDiff(vstate.text, currentText());
+  else { view.innerHTML = ''; const pre = document.createElement('div'); pre.className = 'vd-plain'; pre.textContent = vstate.text; view.append(pre); }
+  view.scrollTop = 0;
+}
+
+async function restoreVersion() {
+  const v = vstate.list[vstate.sel];
+  if (!v) return;
+  const now = currentText();
+  if (now === vstate.text) { toast('Esa versión es igual al texto de ahora'); return; }
+  // Lo de ahora queda guardado como versión, así se puede volver atrás
+  await snapshot(now, true);
+  setText(vstate.text);
+  state.dirty = true;
+  await save();
+  versions.last.set(state.file.path, { at: Date.now(), text: vstate.text });
+  closeVersions();
+  toast('Volviste a la versión de ' + fmtVersionDate(v.date).toLowerCase() + '. Lo que tenías quedó guardado como versión.');
+}
+
+function closeVersions() { $('versions').hidden = true; }
+
 async function openFile(handle, path, single = false) {
   if (state.dirty && state.file) await save();
   try {
-    const text = await (await handle.getFile()).text();
-    state.file = { handle, path, single };
+    const f = await handle.getFile();
+    const text = await f.text();
+    state.file = { handle, path, single, opened: text, openedAt: f.lastModified };
     loadBookStyle();
     setText(text);
     showDocName();
@@ -981,6 +1237,9 @@ async function mountRoot(handle) {
   const ul = li.querySelector('ul');
   setTarget(handle, ul, '', li.querySelector('.row'));
   await syncNow();
+  versions.last.clear();
+  versions.pruned.clear();
+  setTimeout(pruneAllVersions, 5000);
   await refreshDir(handle, ul, '');
   const last = pref('lastFile', null);
   if (last) {
@@ -1464,6 +1723,7 @@ const COMMANDS = {
   toggleStatus: () => { const off = document.body.classList.toggle('no-status'); setPref('status', !off); syncBars(); },
   toggleSource,
   exportPdf,
+  showVersions: openVersions,
   toggleSpell: () => { setPref('spell', !pref('spell', true)); applySpell(); toast(pref('spell', true) ? 'Corrector ortográfico activado' : 'Corrector ortográfico desactivado'); },
   toggleZoomBar: () => { const z = $('zoomBar'); z.hidden = !z.hidden; setPref('zoomBar', !z.hidden); syncBars(); },
   showFiles: () => showTab('files'),
@@ -1488,7 +1748,7 @@ document.addEventListener('click', (e) => { if (!e.target.closest('.menu')) clos
 window.addEventListener('keydown', (e) => {
   const mod = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
-  if (e.key === 'Escape') closeMenus();
+  if (e.key === 'Escape') { closeMenus(); if (!$('versions').hidden) { e.preventDefault(); closeVersions(); return; } }
   if (mod && !e.shiftKey && k === 's') { e.preventDefault(); save(); }
   else if (mod && !e.shiftKey && k === 'n') { e.preventDefault(); askName('file'); }
   else if (mod && !e.shiftKey && k === 'o') { e.preventDefault(); openOneFile(); }
@@ -1499,6 +1759,18 @@ window.addEventListener('keydown', (e) => {
 }, true);
 
 $('tabFiles').onclick = () => showTab('files');
+$('vMode').onclick = (e) => { const b = e.target.closest('[data-mode]'); if (b) { vstate.mode = b.dataset.mode; showVersion(); } };
+$('vDays').onclick = (e) => {
+  const b = e.target.closest('[data-days]');
+  if (!b) return;
+  setSyncedPref('versionDays', { days: +b.dataset.days, t: Date.now() });
+  [...$('vDays').children].forEach((x) => x.setAttribute('aria-pressed', x === b));
+  versions.pruned.clear();
+  pruneAllVersions();
+};
+$('vRestore').onclick = restoreVersion;
+$('vCopy').onclick = () => navigator.clipboard.writeText(vstate.text).then(() => toast('Texto de la versión copiado'), () => toast('No se pudo copiar'));
+$('versions').addEventListener('click', (e) => { if (e.target === $('versions') || e.target.closest('[data-close]')) closeVersions(); });
 $('tabOutline').onclick = () => showTab('outline');
 $('openFolderBtn').onclick = openFolder;
 $('openFileBtn').onclick = openOneFile;

@@ -24,6 +24,8 @@
       <hr>
       <button type="button" role="menuitem" data-cmd="save">Guardar<kbd>Ctrl+S</kbd></button>
       <button type="button" role="menuitem" data-cmd="exportPdf">Exportar como PDF…<kbd>Ctrl+P</kbd></button>
+      <hr>
+      <button type="button" role="menuitem" data-cmd="showVersions">Versiones…</button>
     </div>
   </div>
   <div class="menu">
@@ -148,6 +150,38 @@
 <div class="update-bar" id="updateBar" role="status" hidden>
   <span>Hay una versión nueva de Capital.</span>
   <button type="button" id="updateBtn">Actualizar</button>
+</div>
+
+<div class="versions" id="versions" hidden>
+  <section class="v-box" role="dialog" aria-modal="true" aria-labelledby="vTitle">
+    <header class="v-head">
+      <h2 id="vTitle">Versiones</h2>
+      <button type="button" class="drawer-close" data-close aria-label="Cerrar">×</button>
+    </header>
+    <div class="v-main">
+      <nav class="v-list" id="vList" aria-label="Versiones guardadas"></nav>
+      <div class="v-right">
+        <div class="v-actions" id="vActions" hidden>
+          <div class="seg" id="vMode">
+            <button type="button" data-mode="changes">Cambios con el texto de ahora</button>
+            <button type="button" data-mode="plain">Texto de esa versión</button>
+          </div>
+          <span class="v-info" id="vInfo"></span>
+          <span class="v-btns">
+            <button type="button" class="v-copy" id="vCopy">Copiar texto</button>
+            <button type="button" class="v-restore" id="vRestore">Restaurar esta versión</button>
+          </span>
+        </div>
+        <div class="v-view" id="vView"></div>
+      </div>
+    </div>
+    <footer class="v-foot">
+      <span>Guardar versiones durante</span>
+      <div class="seg" id="vDays"></div>
+      <span>días</span>
+      <p class="hint">Se guarda una versión cada 5 minutos mientras escribís, en la carpeta <b>.capital-versiones</b> de tu carpeta. Tachado: lo que tenía esa versión y ya no está. Subrayado: lo que agregaste después. Si bajás los días, las versiones más viejas se borran (la última de cada texto queda siempre).</p>
+    </footer>
+  </section>
 </div>
 
 <div class="spell-menu" id="spellMenu" role="menu" hidden></div>
