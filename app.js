@@ -1409,6 +1409,21 @@ function dirItem(handle, path, isRoot) {
   const ul = document.createElement('ul');
   ul.setAttribute('role', 'group');
   li.append(row, ul);
+  // "+" al pasar por la carpeta: nuevo texto adentro de esa carpeta
+  if (!isRoot) {
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'dir-add';
+    add.textContent = '+';
+    add.title = 'Nuevo texto en «' + handle.name + '»';
+    add.setAttribute('aria-label', add.title);
+    add.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setTarget(handle, ul, path, row);
+      askName('file');
+    });
+    li.append(add);
+  }
   row.addEventListener('click', async () => {
     setTarget(handle, ul, path, row);
     if (isRoot) return;
@@ -1540,11 +1555,17 @@ async function restoreRoot() {
 }
 
 /* Nuevo archivo / carpeta: campo de texto dentro del árbol */
-function askName(kind) {
+async function askName(kind) {
   if (!state.root) { openFolder(); return; }
   const target = state.target || { handle: state.root, ul: tree.querySelector('li[data-path=""] > ul'), path: '' };
   const li = target.ul.closest('li');
-  if (li && !li.classList.contains('open')) li.querySelector('.row').click();
+  // Si la carpeta está cerrada, se abre primero (y se espera a que muestre lo que tiene)
+  if (li && !li.classList.contains('open')) {
+    li.classList.add('open');
+    state.openDirs.add(target.path);
+    setPref('openDirs', [...state.openDirs]);
+    await refreshDir(target.handle, target.ul, target.path);
+  }
   const input = document.createElement('input');
   input.className = 'new-input';
   input.placeholder = kind === 'file' ? 'Nombre del archivo' : 'Nombre de la carpeta';
