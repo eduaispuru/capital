@@ -753,10 +753,10 @@ function paintSpell() {
 }
 
 /* Tildes automáticas */
-// Cada palabra que terminás de escribir se revisa a los 10 segundos. Si no existe y hay una sola
+// Cada palabra que terminás de escribir se revisa a los 3 segundos. Si no existe y hay una sola
 // forma correcta que cambia solo en las tildes ("lampara" → "lámpara"), se corrige sola. Las que
 // existen con y sin tilde (esta/está, deje/dejé) no se tocan: depende de la frase.
-const AUTO_DELAY = 10000;
+const AUTO_DELAY = 3000;
 const autoOn = () => pref('autoAccent', true);
 const autoFix = { pending: [], timer: 0 };
 
