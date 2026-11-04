@@ -477,6 +477,13 @@ body[data-source="yes"] .book::before {
   font: 17px/1.7 var(--font-body); color: var(--ink);
 }
 .vd-edit:focus { outline: none; border-color: var(--ink-faint); }
+.v-nav { display: inline-flex; align-items: center; gap: 4px; }
+.v-nav button { width: 28px; height: 28px; border: 1px solid var(--side-line); border-radius: 50%; background: #fdfcf9; font: 15px var(--ui); color: var(--ink-soft); }
+.v-nav button:hover:not(:disabled) { border-color: var(--ink-faint); color: var(--ribbon); }
+.v-nav button:disabled { opacity: .4; cursor: default; }
+.v-nav span { margin-left: 4px; font: italic 14px var(--font-side); color: var(--ink-faint); white-space: nowrap; }
+@keyframes v-flash { from { background-color: rgb(138 47 40 / .14); } to { background-color: transparent; } }
+.v-flash { animation: v-flash 1.2s ease-out; }
 /* Comparar y editar: dos columnas alineadas por párrafo */
 .vs-head { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; position: sticky; top: -18px; z-index: 1; background: var(--paper); padding: 4px 0 10px; margin-bottom: 6px; border-bottom: 1px solid var(--side-line); font: 500 11.5px var(--font-side); letter-spacing: .2em; text-transform: uppercase; color: var(--ink-faint); }
 .vs-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 28px; row-gap: 14px; }

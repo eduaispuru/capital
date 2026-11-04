@@ -1117,6 +1117,43 @@ function versionInfo() {
   $('vRestore').hidden = $('vCopy').hidden = side;
   $('vSave').hidden = !side;
   $('vSave').disabled = !vstate.sideDirty;
+  $('vNav').hidden = vstate.mode === 'plain';
+}
+
+// Flechas para ir de un cambio al siguiente
+function changeTargets() {
+  if (vstate.mode === 'side') return (vstate.rows || []).filter((r) => r.a !== r.cell.textContent).map((r) => r.old);
+  return [...$('vView').querySelectorAll('.vd-changed')];
+}
+function updateNavCount(i) {
+  if (i == null) vstate.nav = null;
+  const n = changeTargets().length;
+  $('vNavCount').textContent = !n ? 'Sin cambios' : i == null ? plural(n, 'cambio', 'cambios') : `${i + 1} de ${n}`;
+  $('vPrev').disabled = $('vNext').disabled = !n;
+}
+function goToChange(dir) {
+  const view = $('vView');
+  const list = changeTargets();
+  if (!list.length) return updateNavCount();
+  const line = view.getBoundingClientRect().top + view.clientHeight * 0.3;
+  const tops = list.map((el) => el.getBoundingClientRect().top);
+  // Si no te moviste desde el último salto, sigue desde ese cambio; si no, desde lo que estás viendo
+  let i;
+  if (vstate.nav && vstate.nav.top === view.scrollTop && vstate.nav.i < list.length) i = vstate.nav.i + dir;
+  else {
+    const top = view.getBoundingClientRect().top;
+    i = dir > 0 ? tops.findIndex((t) => t > top + 4) : tops.findLastIndex((t) => t < top - 4);
+  }
+  if (i < 0 || i >= list.length) i = dir > 0 ? 0 : list.length - 1; // al llegar al final vuelve a empezar
+  view.scrollTop += tops[i] - line;
+  vstate.nav = { i, top: view.scrollTop };
+  list.forEach((el) => el.classList.remove('v-flash'));
+  void list[i].offsetWidth;
+  list[i].classList.add('v-flash');
+  const row = vstate.mode === 'side' && (vstate.rows || []).find((r) => r.old === list[i]);
+  if (row) row.cell.classList.add('v-flash'), setTimeout(() => row.cell.classList.remove('v-flash'), 1200);
+  setTimeout(() => list[i].classList.remove('v-flash'), 1200);
+  updateNavCount(i);
 }
 
 function showVersion() {
@@ -1124,8 +1161,8 @@ function showVersion() {
   const view = $('vView');
   versionInfo();
   CSS.highlights && CSS.highlights.delete('capital-vins');
-  if (vstate.mode === 'changes') { view.innerHTML = renderDiff(vstate.text, currentText()); view.scrollTop = 0; return; }
-  if (vstate.mode === 'side') { renderSide(); return; }
+  if (vstate.mode === 'changes') { view.innerHTML = renderDiff(vstate.text, currentText()); view.scrollTop = 0; updateNavCount(); return; }
+  if (vstate.mode === 'side') { renderSide(); updateNavCount(); return; }
   // El texto de la versión se puede editar acá mismo; "Usar este texto" lo pone en lugar del actual
   view.innerHTML = '<p class="vd-tip">Podés editar este texto. Con <b>Usar este texto</b> reemplaza al de ahora, y lo que tenías queda guardado como versión.</p>';
   const ta = document.createElement('textarea');
@@ -1202,7 +1239,7 @@ function renderSide() {
       vstate.sideDirty = true;
       versionInfo();
       clearTimeout(row.timer);
-      row.timer = setTimeout(() => { sideRow(row); sideHighlights(); }, 250);
+      row.timer = setTimeout(() => { sideRow(row); sideHighlights(); updateNavCount(); }, 250);
     });
     if (row.a !== null) {
       // Flecha para traer el párrafo de la versión tal cual
@@ -1973,6 +2010,8 @@ $('vMode').onclick = (e) => {
   showVersion();
 };
 $('vSave').onclick = saveSide;
+$('vPrev').onclick = () => goToChange(-1);
+$('vNext').onclick = () => goToChange(1);
 $('vDays').onclick = (e) => {
   const b = e.target.closest('[data-days]');
   if (!b) return;
