@@ -693,12 +693,30 @@ function spellTokens() {
   const walker = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT, {
     acceptNode: (n) => (n.parentElement.closest(skip) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
   });
+  // Al corregir parte de una palabra, el editor puede dejarla partida en varios textos seguidos
+  // ("li" + "nda"): se leen juntos para revisar la palabra entera
+  const runs = [];
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-    for (const m of n.data.matchAll(/\p{L}+/gu)) {
+    const last = runs[runs.length - 1];
+    if (last && last[last.length - 1].nextSibling === n) last.push(n);
+    else runs.push([n]);
+  }
+  for (const run of runs) {
+    const text = run.map((n) => n.data).join('');
+    const at = (i, end) => {
+      // Posición i del texto unido, en el texto que corresponde
+      for (const n of run) {
+        if (i < n.data.length || (end && i === n.data.length)) return [n, i];
+        i -= n.data.length;
+      }
+      const n = run[run.length - 1];
+      return [n, n.data.length];
+    };
+    for (const m of text.matchAll(/\p{L}+/gu)) {
       const w = m[0];
       // Siglas mezcladas como "McDonald" o "iPhone" no se revisan
       if (w.length < 2 || /\p{Lu}/u.test(w.slice(1)) && w !== w.toUpperCase()) continue;
-      out.push({ node: n, start: m.index, end: m.index + w.length, word: w });
+      out.push({ start: at(m.index, false), end: at(m.index + w.length, true), word: w });
     }
   }
   return out;
@@ -725,10 +743,10 @@ function paintSpell() {
   for (const t of spellTokens()) {
     if (spell.verdict.get(t.word) !== false || mine.has(t.word) || mine.has(t.word.toLowerCase())) continue;
     // La palabra que se está escribiendo no se marca hasta salir de ella
-    if (caret && caret.startContainer === t.node && caret.startOffset >= t.start && caret.startOffset <= t.end) continue;
     const r = new Range();
-    r.setStart(t.node, t.start);
-    r.setEnd(t.node, t.end);
+    r.setStart(...t.start);
+    r.setEnd(...t.end);
+    if (caret && r.comparePoint(caret.startContainer, caret.startOffset) === 0) continue;
     spell.ranges.push(r);
   }
   CSS.highlights.set('capital-spell', new Highlight(...spell.ranges));
@@ -738,7 +756,7 @@ function paintSpell() {
 function spellRangeAt(x, y) {
   const pos = document.caretRangeFromPoint && document.caretRangeFromPoint(x, y);
   if (!pos) return null;
-  return spell.ranges.find((r) => r.startContainer === pos.startContainer && pos.startOffset >= r.startOffset && pos.startOffset <= r.endOffset) || null;
+  return spell.ranges.find((r) => { try { return r.comparePoint(pos.startContainer, pos.startOffset) === 0; } catch (e) { return false; } }) || null;
 }
 
 function closeSpellMenu() { $('spellMenu').hidden = true; }
