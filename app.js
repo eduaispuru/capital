@@ -904,7 +904,9 @@ async function listVersions(path) {
     const date = h.kind === 'file' && versionDate(h.name);
     if (date) out.push({ handle: h, date });
   }
-  return out.sort((a, b) => b.date - a.date || b.handle.name.localeCompare(a.handle.name));
+  // Dos versiones en el mismo segundo: la que lleva " (2)" es la más nueva
+  const seq = (v) => +((v.handle.name.match(/\((\d+)\)\.md$/) || [0, 1])[1]);
+  return out.sort((a, b) => b.date - a.date || seq(b) - seq(a));
 }
 const readVersion = async (v) => (await v.handle.getFile()).text();
 
@@ -1046,7 +1048,7 @@ function renderDiff(from, to) {
 /* Ventana de versiones */
 const vstate = { list: [], sel: -1, text: '', orig: '', edited: false, mode: 'changes' };
 // Si editaste el texto de una versión y no lo usaste, se pregunta antes de perderlo
-const keepEdits = () => !vstate.edited || confirm('Editaste el texto de esta versión y no lo usaste. ¿Descartar lo que editaste?');
+const keepEdits = () => (!vstate.edited && !vstate.sideDirty) || confirm('Tenés cambios en esta ventana que no usaste. ¿Descartarlos?');
 
 function fmtVersionDate(d) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -1100,6 +1102,7 @@ async function selectVersion(i) {
   const v = vstate.list[i];
   vstate.text = vstate.orig = await readVersion(v);
   vstate.edited = false;
+  vstate.sideDirty = false;
   $('vActions').hidden = false;
   showVersion();
 }
@@ -1109,14 +1112,20 @@ function versionInfo() {
   const words = plural(countWords(plainText(vstate.text)), 'palabra', 'palabras');
   $('vInfo').textContent = vstate.edited ? words + ' · editada' : words + (vstate.sel === 0 ? ' · la más reciente' : '');
   $('vRestore').textContent = vstate.edited ? 'Usar este texto' : 'Restaurar esta versión';
-  $('vUndo').hidden = !vstate.edited;
+  const side = vstate.mode === 'side';
+  $('vUndo').hidden = !vstate.edited || side;
+  $('vRestore').hidden = $('vCopy').hidden = side;
+  $('vSave').hidden = !side;
+  $('vSave').disabled = !vstate.sideDirty;
 }
 
 function showVersion() {
   [...$('vMode').children].forEach((b) => b.setAttribute('aria-pressed', b.dataset.mode === vstate.mode));
   const view = $('vView');
   versionInfo();
+  CSS.highlights && CSS.highlights.delete('capital-vins');
   if (vstate.mode === 'changes') { view.innerHTML = renderDiff(vstate.text, currentText()); view.scrollTop = 0; return; }
+  if (vstate.mode === 'side') { renderSide(); return; }
   // El texto de la versión se puede editar acá mismo; "Usar este texto" lo pone en lugar del actual
   view.innerHTML = '<p class="vd-tip">Podés editar este texto. Con <b>Usar este texto</b> reemplaza al de ahora, y lo que tenías queda guardado como versión.</p>';
   const ta = document.createElement('textarea');
@@ -1156,8 +1165,151 @@ async function restoreVersion() {
 
 function closeVersions() {
   if (!keepEdits()) return;
-  vstate.edited = false;
+  vstate.edited = vstate.sideDirty = false;
+  CSS.highlights && CSS.highlights.delete('capital-vins');
   $('versions').hidden = true;
+}
+
+/* Comparar y editar: la versión a la izquierda, el texto de ahora a la derecha (editable),
+   párrafo por párrafo. A la izquierda se tacha lo que ya no está; a la derecha se resalta lo nuevo. */
+const paragraphs = (t) => t.replace(/\s+$/, '').split(/\n(?:[ \t]*\n)+/);
+const ESC = (t) => t.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+function renderSide() {
+  const view = $('vView');
+  const a = paragraphs(vstate.text), b = paragraphs(currentText());
+  const ops = diffSeq(a, b) || [...a.map((x) => ['-', x]), ...b.map((x) => ['+', x])];
+  const rows = [];
+  for (let i = 0; i < ops.length;) {
+    if (ops[i][0] === '=') { rows.push({ a: ops[i][1], b: ops[i][1] }); i++; continue; }
+    const del = [], add = [];
+    while (i < ops.length && ops[i][0] !== '=') { (ops[i][0] === '-' ? del : add).push(ops[i][1]); i++; }
+    rows.push(...pairParagraphs(del, add));
+  }
+  const v = vstate.list[vstate.sel];
+  view.innerHTML = `<div class="vs-head"><span>Versión de ${ESC(fmtVersionDate(v.date).toLowerCase())}</span><span>Texto de ahora: editalo acá</span></div>`;
+  const grid = document.createElement('div');
+  grid.className = 'vs-grid';
+  for (const row of rows) {
+    row.old = document.createElement('div');
+    row.old.className = 'vs-old';
+    row.cell = document.createElement('div');
+    row.cell.className = 'vs-new';
+    row.cell.contentEditable = 'plaintext-only';
+    row.cell.spellcheck = false;
+    row.cell.textContent = row.b ?? '';
+    row.cell.addEventListener('input', () => {
+      vstate.sideDirty = true;
+      versionInfo();
+      clearTimeout(row.timer);
+      row.timer = setTimeout(() => { sideRow(row); sideHighlights(); }, 250);
+    });
+    if (row.a !== null) {
+      // Flecha para traer el párrafo de la versión tal cual
+      const take = document.createElement('button');
+      take.type = 'button';
+      take.className = 'vs-take';
+      take.title = 'Traer este párrafo de la versión';
+      take.setAttribute('aria-label', take.title);
+      take.textContent = '→';
+      take.onclick = () => { row.cell.textContent = row.a; vstate.sideDirty = true; versionInfo(); sideRow(row); sideHighlights(); };
+      row.take = take;
+    }
+    sideRow(row);
+    grid.append(row.old, row.cell);
+  }
+  vstate.rows = rows;
+  view.append(grid);
+  sideHighlights();
+  view.scrollTop = 0;
+}
+
+// Empareja párrafos borrados con agregados: cada uno al lado del que más se le parece (o solo)
+function pairParagraphs(del, add) {
+  if (del.length * add.length > 2500) return Array.from({ length: Math.max(del.length, add.length) }, (_, j) => ({ a: del[j] ?? null, b: add[j] ?? null }));
+  const bag = (t) => (t.toLowerCase().match(/\p{L}+/gu) || []);
+  const D = del.map(bag), A = add.map(bag);
+  const sim = (x, y) => {
+    if (!x.length && !y.length) return 1;
+    const set = new Set(x);
+    const common = y.filter((w) => set.has(w)).length;
+    return (2 * Math.min(common, x.length)) / (x.length + y.length);
+  };
+  const n = del.length, m = add.length;
+  const f = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = 1; i <= n; i++) for (let j = 1; j <= m; j++) {
+    const s = sim(D[i - 1], A[j - 1]);
+    f[i][j] = Math.max(f[i - 1][j], f[i][j - 1], s >= 0.3 ? f[i - 1][j - 1] + s : -1);
+  }
+  const out = [];
+  let i = n, j = m;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0) {
+      const s = sim(D[i - 1], A[j - 1]);
+      if (s >= 0.3 && f[i][j] === f[i - 1][j - 1] + s) { out.push({ a: del[--i], b: add[--j] }); continue; }
+    }
+    if (j > 0 && (i === 0 || f[i][j] === f[i][j - 1])) out.push({ a: null, b: add[--j] });
+    else out.push({ a: del[--i], b: null });
+  }
+  return out.reverse();
+}
+
+// Vuelve a comparar una fila: lo tachado a la izquierda y lo nuevo resaltado a la derecha
+function sideRow(row) {
+  const now = row.cell.textContent;
+  row.ranges = [];
+  if (row.a === null) {
+    row.old.innerHTML = '';
+    row.old.classList.add('vs-empty');
+    if (now) { const r = new Range(); r.selectNodeContents(row.cell); row.ranges.push(r); }
+    return;
+  }
+  row.old.classList.remove('vs-empty');
+  const same = row.a === now;
+  row.old.classList.toggle('vs-same', same);
+  if (same) row.old.textContent = row.a;
+  else {
+    const ops = diffSeq(words(row.a), words(now)) || [['-', row.a], ['+', now]];
+    row.old.innerHTML = ops.filter(([op]) => op !== '+').map(([op, t]) => (op === '-' ? `<del>${ESC(t)}</del>` : ESC(t))).join('');
+    // Posiciones de lo agregado dentro del texto editable
+    const nodes = [];
+    const w = document.createTreeWalker(row.cell, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) nodes.push(n);
+    const at = (i) => { for (const n of nodes) { if (i <= n.data.length) return [n, i]; i -= n.data.length; } return null; };
+    let pos = 0;
+    for (const [op, t] of ops) {
+      if (op === '-') continue;
+      if (op === '+' && t.trim()) {
+        const s = at(pos), e = at(pos + t.length);
+        if (s && e) { const r = new Range(); r.setStart(...s); r.setEnd(...e); row.ranges.push(r); }
+      }
+      pos += t.length;
+    }
+  }
+  if (row.take) row.old.prepend(row.take);
+  if (row.take) row.take.hidden = same;
+}
+
+function sideHighlights() {
+  if (!(window.CSS && CSS.highlights)) return;
+  CSS.highlights.set('capital-vins', new Highlight(...(vstate.rows || []).flatMap((r) => r.ranges)));
+}
+
+async function saveSide() {
+  const text = vstate.rows.map((r) => r.cell.textContent.replace(/\s+$/, '')).filter((t) => t.trim()).join('\n\n') + '\n';
+  const now = currentText();
+  if (text.trim() === now.trim()) { vstate.sideDirty = false; versionInfo(); toast('No hay cambios para guardar'); return; }
+  // Lo de ahora queda guardado como versión, así se puede volver atrás
+  await snapshot(now, true);
+  setText(text);
+  state.dirty = true;
+  await save();
+  versions.last.set(state.file.path, { at: Date.now(), text });
+  vstate.sideDirty = false;
+  const top = $('vView').scrollTop;
+  showVersion();
+  $('vView').scrollTop = top;
+  toast('Cambios guardados en tu texto. Lo que tenías quedó guardado como versión.');
 }
 
 async function openFile(handle, path, single = false) {
@@ -1812,7 +1964,15 @@ window.addEventListener('keydown', (e) => {
 }, true);
 
 $('tabFiles').onclick = () => showTab('files');
-$('vMode').onclick = (e) => { const b = e.target.closest('[data-mode]'); if (b) { vstate.mode = b.dataset.mode; showVersion(); } };
+$('vMode').onclick = (e) => {
+  const b = e.target.closest('[data-mode]');
+  if (!b || b.dataset.mode === vstate.mode) return;
+  if (vstate.sideDirty && !confirm('Tenés cambios sin guardar en tu texto. ¿Descartarlos?')) return;
+  vstate.sideDirty = false;
+  vstate.mode = b.dataset.mode;
+  showVersion();
+};
+$('vSave').onclick = saveSide;
 $('vDays').onclick = (e) => {
   const b = e.target.closest('[data-days]');
   if (!b) return;
