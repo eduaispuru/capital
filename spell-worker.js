@@ -225,9 +225,26 @@ function suggest(word) {
     .map(([w]) => (isCap ? w[0].toUpperCase() + w.slice(1) : w));
 }
 
+// Tildes automáticas: formas correctas que difieren de la palabra solo en las tildes (o la diéresis).
+// Se usa solo si la palabra no existe; si hay una única forma, se corrige sola.
+const ACUTE = { a: 'á', e: 'é', i: 'í', o: 'ó', u: 'ú', A: 'Á', E: 'É', I: 'Í', O: 'Ó', U: 'Ú' };
+function accentFix(word) {
+  if (check(word, true)) return [];
+  const base = word.normalize('NFD').replace(/[\u0301\u0308]/g, '').normalize('NFC');
+  const out = new Set();
+  const tries = [base];
+  for (let i = 0; i < base.length; i++) {
+    if (ACUTE[base[i]]) tries.push(base.slice(0, i) + ACUTE[base[i]] + base.slice(i + 1));
+    if (base[i] === 'u' || base[i] === 'U') tries.push(base.slice(0, i) + (base[i] === 'u' ? 'ü' : 'Ü') + base.slice(i + 1));
+  }
+  for (const t of tries) if (t !== word && check(t)) out.add(t);
+  return [...out];
+}
+
 self.onmessage = async (e) => {
   await ready;
   const { id, check: list, suggest: one } = e.data;
-  if (list) self.postMessage({ id, wrong: list.filter((w) => !check(w, true)) });
+  if (e.data.accent) self.postMessage({ id, fixes: accentFix(e.data.accent) });
+  else if (list) self.postMessage({ id, wrong: list.filter((w) => !check(w, true)) });
   else self.postMessage({ id, suggestions: suggest(one) });
 };

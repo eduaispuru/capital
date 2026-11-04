@@ -752,6 +752,111 @@ function paintSpell() {
   CSS.highlights.set('capital-spell', new Highlight(...spell.ranges));
 }
 
+/* Tildes automáticas */
+// Cada palabra que terminás de escribir se revisa a los 10 segundos. Si no existe y hay una sola
+// forma correcta que cambia solo en las tildes ("lampara" → "lámpara"), se corrige sola. Las que
+// existen con y sin tilde (esta/está, deje/dejé) no se tocan: depende de la frase.
+const AUTO_DELAY = 10000;
+const autoOn = () => pref('autoAccent', true);
+const autoFix = { pending: [], timer: 0 };
+
+// Al escribir un espacio, un signo o Enter, la palabra que quedó antes del cursor está terminada
+function noteFinishedWord(e) {
+  if (!autoOn() || state.source || state.loading) return;
+  const type = e.inputType;
+  if (!(type === 'insertText' && e.data && !/\p{L}/u.test(e.data)) && type !== 'insertParagraph') return;
+  const sel = getSelection();
+  const root = editorRoot();
+  if (!sel.rangeCount || !root) return;
+  let block = sel.anchorNode;
+  while (block && block.parentNode !== root) block = block.parentNode;
+  if (!block) return;
+  const r = document.createRange();
+  r.setStart(block, 0);
+  r.setEnd(sel.anchorNode, sel.anchorOffset);
+  // Con Enter, el párrafo de arriba es el que se terminó
+  const before = type === 'insertParagraph' && block.previousElementSibling && !r.toString().trim()
+    ? block.previousElementSibling.textContent : r.toString();
+  const m = before.match(/(\p{L}+)\P{L}*$/u);
+  if (!m || m[1].length < 2) return;
+  autoFix.pending.push({ word: m[1], at: performance.now() });
+  if (!autoFix.timer) autoFix.timer = setInterval(runAutoFix, 1000);
+}
+
+async function runAutoFix() {
+  const now = performance.now();
+  const due = autoFix.pending.filter((p) => now - p.at >= AUTO_DELAY);
+  autoFix.pending = autoFix.pending.filter((p) => now - p.at < AUTO_DELAY);
+  if (!autoFix.pending.length) { clearInterval(autoFix.timer); autoFix.timer = 0; }
+  if (!autoOn() || state.source || !$('versions').hidden) return;
+  const mine = myWords();
+  for (const word of new Set(due.map((p) => p.word))) {
+    if (mine.has(word) || mine.has(word.toLowerCase())) continue;
+    const { fixes } = await spellAsk({ accent: word });
+    if (fixes.length === 1) replaceWord(word, fixes[0]);
+  }
+}
+
+// Posición del cursor como párrafo + cantidad de letras desde su comienzo (sobrevive a que el editor rehaga el párrafo)
+function caretSpot() {
+  const sel = getSelection();
+  const root = editorRoot();
+  if (!sel.rangeCount || !root || !root.contains(sel.anchorNode)) return null;
+  let block = sel.anchorNode;
+  while (block.parentNode !== root) block = block.parentNode;
+  const r = document.createRange();
+  r.setStart(block, 0);
+  r.setEnd(sel.anchorNode, sel.anchorOffset);
+  return { index: [...root.children].indexOf(block), offset: r.toString().length };
+}
+function pointAt(index, offset) {
+  const block = editorRoot().children[index];
+  if (!block) return null;
+  const w = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+  let last = null;
+  for (let n = w.nextNode(); n; n = w.nextNode()) {
+    if (offset <= n.data.length) return [n, offset];
+    offset -= n.data.length;
+    last = n;
+  }
+  return last ? [last, last.data.length] : [block, 0];
+}
+
+// Cambia la palabra en todo el texto (menos donde está el cursor), como si la hubieras corregido vos:
+// queda en el deshacer (Ctrl+Z) y se marca un momento para que veas qué cambió
+function replaceWord(word, fix) {
+  const root = editorRoot();
+  if (!root || document.activeElement !== root) return;
+  const marks = [];
+  for (let guard = 0; guard < 100; guard++) {
+    const sel = getSelection();
+    const caret = sel.rangeCount ? sel.getRangeAt(0) : null;
+    const t = spellTokens().find((t) => {
+      if (t.word !== word) return false;
+      const r = new Range(); r.setStart(...t.start); r.setEnd(...t.end);
+      return !(caret && r.comparePoint(caret.startContainer, caret.startOffset) === 0);
+    });
+    if (!t) break;
+    const spot = caretSpot();
+    let block = t.start[0];
+    while (block.parentNode !== root) block = block.parentNode;
+    const index = [...root.children].indexOf(block);
+    const pre = document.createRange(); pre.setStart(block, 0); pre.setEnd(...t.start);
+    const from = pre.toString().length;
+    const r = new Range(); r.setStart(...t.start); r.setEnd(...t.end);
+    sel.removeAllRanges(); sel.addRange(r);
+    document.execCommand('insertText', false, fix);
+    // El cursor vuelve a donde estaba (las tildes no cambian el largo de la palabra)
+    if (spot) { const p = pointAt(spot.index, spot.offset); if (p) { const c = new Range(); c.setStart(...p); sel.removeAllRanges(); sel.addRange(c); } }
+    marks.push([index, from, fix.length]);
+  }
+  if (!marks.length || !(window.CSS && CSS.highlights)) return;
+  const ranges = marks.map(([i, from, len]) => { const a = pointAt(i, from), b = pointAt(i, from + len); if (!a || !b) return null; const r = new Range(); r.setStart(...a); r.setEnd(...b); return r; }).filter(Boolean);
+  CSS.highlights.set('capital-autofix', new Highlight(...ranges));
+  clearTimeout(replaceWord.timer);
+  replaceWord.timer = setTimeout(() => CSS.highlights.delete('capital-autofix'), 1800);
+}
+
 /* Menú de sugerencias (clic derecho sobre una palabra subrayada) */
 function spellRangeAt(x, y) {
   const pos = document.caretRangeFromPoint && document.caretRangeFromPoint(x, y);
@@ -1987,6 +2092,7 @@ const COMMANDS = {
   toggleSource,
   exportPdf,
   showVersions: openVersions,
+  toggleAuto: () => { setPref('autoAccent', !autoOn()); $('autoItem').classList.toggle('checked', autoOn()); toast(autoOn() ? 'Tildes automáticas activadas' : 'Tildes automáticas desactivadas'); },
   toggleSpell: () => { setPref('spell', !pref('spell', true)); applySpell(); toast(pref('spell', true) ? 'Corrector ortográfico activado' : 'Corrector ortográfico desactivado'); },
   toggleZoomBar: () => { const z = $('zoomBar'); z.hidden = !z.hidden; setPref('zoomBar', !z.hidden); syncBars(); },
   showFiles: () => showTab('files'),
@@ -2095,6 +2201,8 @@ window.addEventListener('beforeunload', (e) => { if (state.dirty) { save(); e.pr
   $('source').addEventListener('input', () => { fitSource(); onInput(); });
   $('source').addEventListener('beforeinput', onSourceBeforeInput);
   $('editor').addEventListener('beforeinput', onEditorBeforeInput, true);
+  $('editor').addEventListener('input', noteFinishedWord, true);
+  $('autoItem').classList.toggle('checked', autoOn());
   // Al escribir, Chrome a veces corre la vista aunque el cursor ya se veía (pasa con el texto
   // repartido en páginas y las notas al pie). Si el cursor se veía donde estaba la vista, vuelve ahí.
   // Rueda, clic o teclas de desplazamiento son movimientos tuyos y no se tocan.

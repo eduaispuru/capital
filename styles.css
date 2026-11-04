@@ -435,6 +435,7 @@ body[data-source="yes"] .book::before {
   font: italic 13px var(--font-side); color: var(--ink-faint);
 }
 /* Corrector: subrayado ondulado suave y menú de sugerencias */
+::highlight(capital-autofix) { background-color: rgb(60 130 70 / .18); }
 ::highlight(capital-spell) { text-decoration: underline wavy rgb(176 62 50 / .7); text-decoration-thickness: 1px; text-decoration-skip-ink: none; }
 .spell-menu {
   position: fixed; z-index: 50; min-width: 200px; max-width: 280px; padding: 6px;
