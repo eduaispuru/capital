@@ -1044,7 +1044,9 @@ function renderDiff(from, to) {
 }
 
 /* Ventana de versiones */
-const vstate = { list: [], sel: -1, text: '', mode: 'changes' };
+const vstate = { list: [], sel: -1, text: '', orig: '', edited: false, mode: 'changes' };
+// Si editaste el texto de una versión y no lo usaste, se pregunta antes de perderlo
+const keepEdits = () => !vstate.edited || confirm('Editaste el texto de esta versión y no lo usaste. ¿Descartar lo que editaste?');
 
 function fmtVersionDate(d) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -1074,6 +1076,7 @@ async function openVersions() {
   await snapshot(currentText());
   vstate.list = await listVersions(file.path).catch(() => []);
   vstate.sel = -1;
+  vstate.edited = false;
   if (!vstate.list.length) {
     $('vView').innerHTML = '<p class="vd-none">Todavía no hay versiones de este texto. Se guarda una cada 5 minutos mientras escribís.</p>';
     return;
@@ -1091,20 +1094,45 @@ async function openVersions() {
 }
 
 async function selectVersion(i) {
+  if (i === vstate.sel || !keepEdits()) return;
   vstate.sel = i;
   [...$('vList').children].forEach((b, j) => b.setAttribute('aria-pressed', j === i));
   const v = vstate.list[i];
-  vstate.text = await readVersion(v);
+  vstate.text = vstate.orig = await readVersion(v);
+  vstate.edited = false;
   $('vActions').hidden = false;
-  $('vInfo').textContent = plural(countWords(plainText(vstate.text)), 'palabra', 'palabras') + (i === 0 ? ' · la más reciente' : '');
   showVersion();
+}
+
+// Palabras, botón principal y "deshacer" según si editaste el texto de la versión
+function versionInfo() {
+  const words = plural(countWords(plainText(vstate.text)), 'palabra', 'palabras');
+  $('vInfo').textContent = vstate.edited ? words + ' · editada' : words + (vstate.sel === 0 ? ' · la más reciente' : '');
+  $('vRestore').textContent = vstate.edited ? 'Usar este texto' : 'Restaurar esta versión';
+  $('vUndo').hidden = !vstate.edited;
 }
 
 function showVersion() {
   [...$('vMode').children].forEach((b) => b.setAttribute('aria-pressed', b.dataset.mode === vstate.mode));
   const view = $('vView');
-  if (vstate.mode === 'changes') view.innerHTML = renderDiff(vstate.text, currentText());
-  else { view.innerHTML = ''; const pre = document.createElement('div'); pre.className = 'vd-plain'; pre.textContent = vstate.text; view.append(pre); }
+  versionInfo();
+  if (vstate.mode === 'changes') { view.innerHTML = renderDiff(vstate.text, currentText()); view.scrollTop = 0; return; }
+  // El texto de la versión se puede editar acá mismo; "Usar este texto" lo pone en lugar del actual
+  view.innerHTML = '<p class="vd-tip">Podés editar este texto. Con <b>Usar este texto</b> reemplaza al de ahora, y lo que tenías queda guardado como versión.</p>';
+  const ta = document.createElement('textarea');
+  ta.className = 'vd-edit';
+  ta.spellcheck = false;
+  ta.value = vstate.text;
+  ta.setAttribute('aria-label', 'Texto de la versión');
+  const fit = () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; };
+  ta.addEventListener('input', () => {
+    vstate.text = ta.value;
+    vstate.edited = vstate.text !== vstate.orig;
+    fit();
+    versionInfo();
+  });
+  view.append(ta);
+  fit();
   view.scrollTop = 0;
 }
 
@@ -1112,18 +1140,25 @@ async function restoreVersion() {
   const v = vstate.list[vstate.sel];
   if (!v) return;
   const now = currentText();
-  if (now === vstate.text) { toast('Esa versión es igual al texto de ahora'); return; }
+  if (now === vstate.text) { toast(vstate.edited ? 'Ese texto es igual al de ahora' : 'Esa versión es igual al texto de ahora'); return; }
+  const edited = vstate.edited;
   // Lo de ahora queda guardado como versión, así se puede volver atrás
   await snapshot(now, true);
   setText(vstate.text);
   state.dirty = true;
   await save();
   versions.last.set(state.file.path, { at: Date.now(), text: vstate.text });
+  vstate.edited = false;
   closeVersions();
-  toast('Volviste a la versión de ' + fmtVersionDate(v.date).toLowerCase() + '. Lo que tenías quedó guardado como versión.');
+  toast(edited ? 'Listo: tu texto ahora es el que editaste. Lo que tenías quedó guardado como versión.'
+    : 'Volviste a la versión de ' + fmtVersionDate(v.date).toLowerCase() + '. Lo que tenías quedó guardado como versión.');
 }
 
-function closeVersions() { $('versions').hidden = true; }
+function closeVersions() {
+  if (!keepEdits()) return;
+  vstate.edited = false;
+  $('versions').hidden = true;
+}
 
 async function openFile(handle, path, single = false) {
   if (state.dirty && state.file) await save();
@@ -1787,6 +1822,7 @@ $('vDays').onclick = (e) => {
   pruneAllVersions();
 };
 $('vRestore').onclick = restoreVersion;
+$('vUndo').onclick = () => { vstate.text = vstate.orig; vstate.edited = false; showVersion(); };
 $('vCopy').onclick = () => navigator.clipboard.writeText(vstate.text).then(() => toast('Texto de la versión copiado'), () => toast('No se pudo copiar'));
 $('versions').addEventListener('click', (e) => { if (e.target === $('versions') || e.target.closest('[data-close]')) closeVersions(); });
 $('tabOutline').onclick = () => showTab('outline');
