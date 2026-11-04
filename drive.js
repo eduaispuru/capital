@@ -167,11 +167,16 @@ function pickDriveFolder() {
     const show = async () => {
       const here = path[path.length - 1];
       crumbs.textContent = path.map((p) => p.name).join(' › ');
-      document.getElementById('dpUse').textContent = path.length > 1 ? 'Usar «' + here.name + '»' : 'Usar Mi unidad';
+      // Toda la unidad no: hay que entrar a una carpeta (por ejemplo, Capital Escritorio)
+      const use = document.getElementById('dpUse');
+      use.disabled = path.length === 1;
+      use.textContent = path.length > 1 ? 'Usar «' + here.name + '»' : 'Entrá a una carpeta';
       list.innerHTML = '<p class="dp-wait">Buscando carpetas…</p>';
       try {
+        // "Capital Escritorio" (o la que se usó antes) va primero
+        const fav = (f) => (f.id === (pref('driveRoot', {}) || {}).id || /capital/i.test(f.name) ? 0 : 1);
         const folders = (await driveList(here.id)).filter((f) => f.mimeType === DRIVE_FOLDER)
-          .sort((a, b) => a.name.localeCompare(b.name, 'es', { numeric: true, sensitivity: 'base' }));
+          .sort((a, b) => fav(a) - fav(b) || a.name.localeCompare(b.name, 'es', { numeric: true, sensitivity: 'base' }));
         list.innerHTML = '';
         if (path.length > 1) {
           const up = document.createElement('button');
@@ -181,14 +186,14 @@ function pickDriveFolder() {
         }
         for (const f of folders) {
           const b = document.createElement('button');
-          b.type = 'button'; b.className = 'dp-item'; b.textContent = f.name;
+          b.type = 'button'; b.className = 'dp-item' + (fav(f) ? '' : ' dp-fav'); b.textContent = f.name;
           b.onclick = () => { path.push({ id: f.id, name: f.name }); show(); };
           list.append(b);
         }
         if (!folders.length) list.insertAdjacentHTML('beforeend', '<p class="dp-wait">No hay carpetas adentro.</p>');
       } catch (e) { list.innerHTML = '<p class="dp-wait"></p>'; list.firstChild.textContent = e.message; }
     };
-    document.getElementById('dpUse').onclick = () => { const here = path[path.length - 1]; done({ id: here.id, name: here.name }); };
+    document.getElementById('dpUse').onclick = () => { const here = path[path.length - 1]; if (path.length > 1) done({ id: here.id, name: here.name }); };
     box.querySelectorAll('[data-close]').forEach((b) => { b.onclick = () => done(null); });
     box.hidden = false;
     show();

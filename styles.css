@@ -504,6 +504,8 @@ body[data-source="yes"] .book::before {
 .dp-item:hover { background: var(--hover); }
 .dp-up::before { content: ''; margin: 0; }
 .dp-up { color: var(--ink-soft); font-style: italic; }
+.dp-fav { font-weight: 600; }
+.dp-fav::before { color: var(--ribbon); }
 .dp-wait { padding: 8px 12px; margin: 0; font: italic 15px var(--font-side); color: var(--ink-faint); }
 .dp-hint { flex: 1; font: italic 14px var(--font-side); color: var(--ink-faint); }
 #driveBar { top: auto; bottom: calc(var(--status-h) + 60px); }
@@ -570,6 +572,80 @@ body[data-source="yes"] .book::before {
 @media (max-width: 640px) {
   .shell { grid-template-columns: 1fr; }
   .shell:not(.no-side) .desk { display: none; }
+}
+/* ---------- Teléfono: como Obsidian o Notion en el celular ---------- */
+.m-btn, .m-sheet { display: none; }
+@media screen and (max-width: 640px) {
+  :root { --status-h: 44px; --bar-h: 52px; }
+  body { background: var(--paper); }
+  /* Barra de arriba: ☰ · nombre del texto · Aa · ⋯ */
+  .menubar { height: calc(var(--bar-h) + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 6px 0; gap: 0; background: var(--paper); color: var(--ink); border-bottom: 1px solid var(--side-line); }
+  .menubar .menu, .menubar #styleBtn, .save-state { display: none; }
+  .m-btn { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 10px; color: var(--ink-soft); flex: none; }
+  .m-btn:active { background: var(--hover); }
+  .m-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+  .m-btn circle { fill: currentColor; stroke: none; }
+  .m-aa { font: italic 21px var(--font-display); }
+  .doc-name { flex: 1; margin: 0 4px; text-align: center; font: 500 16px var(--ui); color: var(--ink); }
+  /* El texto a lo ancho, sin hoja ni sombra */
+  .desk { padding: 0; background: var(--paper); }
+  body[data-paged="no"] .book { box-shadow: none; min-height: 100%; }
+  body[data-paged="no"] #editor { padding-bottom: 120px; }
+  .zoom, .sb-zoom, #sideToggle, #styleToggle { display: none !important; }
+  /* Barra de abajo más alta, fácil de tocar */
+  .statusbar { height: calc(var(--status-h) + env(safe-area-inset-bottom)); padding: 0 10px env(safe-area-inset-bottom); font-size: 15px; background: var(--paper); }
+  .sb-btn { height: 40px; min-width: 40px; }
+  .sb-btn svg { width: 19px; height: 19px; }
+  .to-end { width: 44px; height: 44px; right: 16px; }
+  .shell:not(.no-side) ~ .to-end { display: none; }
+  /* Biblioteca a pantalla completa, con renglones cómodos para el dedo */
+  .side-head { padding: 18px 20px 4px; }
+  .side-title { font-size: 26px; }
+  .side-tabs button { padding: 10px 0 8px; font-size: 13px; }
+  .side-panel { padding: 8px 16px 16px 18px; }
+  .row.file { font-size: 18px; padding: 11px 0 11px 16px; }
+  .row.dir { font-size: 13.5px; padding: 18px 0 9px; }
+  .dir-add { top: 12px; width: 36px; height: 36px; line-height: 34px; font-size: 22px; opacity: .8; }
+  .row.dir .count { margin-right: 44px; }
+  li:has(> .row.dir:hover, > .dir-add:hover) > .row.dir .count { visibility: visible; }
+  .side-foot { padding: 12px 16px calc(14px + env(safe-area-inset-bottom)); margin: 0; }
+  .side-foot button { font-size: 17px; padding: 8px 6px; }
+  .new-input { font-size: 18px; padding: 10px 8px; }
+  .tree-empty { font-size: 17px; }
+  .pill { padding: 10px 20px; font-size: 17px; }
+  /* Paneles a pantalla completa debajo de la barra */
+  .drawer { top: calc(var(--bar-h) + env(safe-area-inset-top)); width: 100vw; padding: 0 20px 40px; border-left: 0; }
+  .drawer-close { width: 44px; height: 44px; }
+  .seg button { padding: 7px 14px; }
+  .update-bar { top: auto; bottom: calc(var(--status-h) + 16px); max-width: calc(100vw - 24px); }
+  /* Panel de opciones (⋯) que sube desde abajo */
+  .m-sheet { display: block; position: fixed; inset: 0; z-index: 60; background: rgb(32 31 29 / .35); }
+  .m-sheet[hidden] { display: none; }
+  .m-sheet-panel {
+    position: absolute; left: 0; right: 0; bottom: 0; max-height: 85vh; overflow-y: auto;
+    background: var(--paper); border-radius: 16px 16px 0 0; padding: 6px 12px calc(16px + env(safe-area-inset-bottom));
+    box-shadow: 0 -10px 30px rgb(0 0 0 / .18); animation: m-up .2s ease-out;
+  }
+  @keyframes m-up { from { transform: translateY(30%); opacity: .6; } }
+  .m-grip { width: 40px; height: 4px; border-radius: 2px; background: var(--side-line); margin: 6px auto 8px; }
+  .m-sec h3 { margin: 14px 12px 4px; font: 500 11.5px var(--font-side); letter-spacing: .24em; text-transform: uppercase; color: var(--ink-faint); }
+  .m-sec button { display: flex; justify-content: space-between; align-items: center; width: 100%; min-height: 48px; padding: 0 12px; border-radius: 10px; text-align: left; font: 16.5px var(--ui); color: var(--ink); }
+  .m-sec button:active { background: var(--hover); }
+  .m-sec .toggle::after { content: ""; color: var(--ribbon); font-size: 18px; }
+  .m-sec .toggle.checked::after { content: "✓"; }
+  .m-version { margin: 14px 12px 0; font: 12px var(--ui); color: var(--ink-faint); }
+  /* Versiones: la versión vieja arriba y el texto de ahora abajo, en cada párrafo */
+  .versions { padding: 0; }
+  .v-box { height: 100%; border-radius: 0; border: 0; }
+  .v-actions { padding: 10px 14px; gap: 8px 10px; }
+  .v-btns { margin-left: 0; width: 100%; justify-content: flex-end; }
+  .vs-head { display: none; }
+  .vs-grid { grid-template-columns: 1fr; row-gap: 4px; }
+  .vs-old { font-size: 14px; padding: 8px 30px 0 0; border-top: 1px solid var(--side-line); }
+  .vs-old.vs-same { display: none; }
+  .vs-old.vs-same + .vs-new { color: var(--ink-faint); }
+  .vs-new { font-size: 16px; padding: 4px 6px 10px; }
+  .dp-item { padding: 13px 12px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 

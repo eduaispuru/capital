@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Capital</title>
 <meta name="theme-color" content="#201f1d">
 <link rel="manifest" href="manifest.webmanifest">
@@ -14,6 +14,9 @@
 <body>
 
 <nav class="menubar" aria-label="Menú">
+  <button type="button" class="m-btn" data-cmd="toggleSidebar" aria-label="Tus textos">
+    <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg>
+  </button>
   <div class="menu">
     <button class="menu-btn" type="button" aria-haspopup="true">Archivo</button>
     <div class="menu-list" role="menu">
@@ -61,6 +64,10 @@
   </div>
   <span class="doc-name" id="docName"></span>
   <span class="save-state" id="saveState"></span>
+  <button type="button" class="m-btn m-aa" data-cmd="toggleStyle" aria-label="Estilo">Aa</button>
+  <button type="button" class="m-btn" id="mMore" aria-label="Más opciones">
+    <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4.5" cy="10" r="1.4"/><circle cx="10" cy="10" r="1.4"/><circle cx="15.5" cy="10" r="1.4"/></svg>
+  </button>
 </nav>
 
 <div class="shell" id="shell">
@@ -213,6 +220,13 @@
       <button type="button" class="v-restore" id="dpUse">Usar esta carpeta</button>
     </footer>
   </section>
+</div>
+
+<div class="m-sheet" id="mSheet" hidden>
+  <div class="m-sheet-panel" role="dialog" aria-label="Opciones">
+    <div class="m-grip" aria-hidden="true"></div>
+    <div id="mSheetBody"></div>
+  </div>
 </div>
 
 <div class="spell-menu" id="spellMenu" role="menu" hidden></div>

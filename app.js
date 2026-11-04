@@ -203,8 +203,13 @@ function loadBookStyle() {
   refreshStyle();
 }
 
+// Teléfono: el texto va a lo ancho de la pantalla, con la letra a su tamaño (como Obsidian o Notion).
+// Las hojas de libro achicaban todo para que entrara la página entera y la letra quedaba ilegible.
+const PHONE = matchMedia('(max-width: 640px)');
 function layout() {
-  const paged = PAGES_OK && style.page !== 'continuo';
+  const phone = PHONE.matches && !state.print;
+  document.body.dataset.phone = phone ? 'yes' : 'no';
+  const paged = PAGES_OK && style.page !== 'continuo' && !phone;
   document.body.dataset.paged = paged ? 'yes' : 'no';
   const [mw, mh] = PAGE_SIZES[style.page] || PAGE_SIZES.a5;
   // El zoom agranda la hoja y la letra juntas, así cada página conserva el mismo texto
@@ -213,17 +218,17 @@ function layout() {
   // el PDF sale con los mismos cortes de página y notas al pie que se ven en pantalla
   const print = state.print && paged;
   const fit = (desk.clientWidth - 32) / base;
-  const W = print ? mw * 96 / 25.4 : Math.round(base * (state.zoom > 1 ? state.zoom : Math.max(280 / base, Math.min(state.zoom, fit))));
-  const z = W / base;
+  const W = print ? mw * 96 / 25.4 : phone ? desk.clientWidth : Math.round(base * (state.zoom > 1 ? state.zoom : Math.max(280 / base, Math.min(state.zoom, fit))));
+  const z = phone ? state.zoom : W / base;
   const f = FONTS.find((x) => x.id === style.font) || FONTS[0];
   document.documentElement.style.setProperty('--fs', (style.size * (f.scale || 1) * z).toFixed(3) + 'px');
   document.documentElement.style.setProperty('--zoom', z);
   const H = print ? mh * 96 / 25.4 : Math.round(W * mh / mw);
   const narrow = W < 520;
   const round = print ? (x) => x : Math.round;
-  const top = round(H * (narrow ? 0.06 : 0.09));
-  const bottom = round(H * (narrow ? 0.07 : 0.1));
-  const side = round(W * (narrow ? 0.07 : 0.13));
+  const top = phone ? 20 : round(H * (narrow ? 0.06 : 0.09));
+  const bottom = phone ? 24 : round(H * (narrow ? 0.07 : 0.1));
+  const side = phone ? 22 : round(W * (narrow ? 0.07 : 0.13));
   const gap = print ? -(top + bottom) : narrow ? 24 : 40;
   const s = document.documentElement.style;
   s.setProperty('--page-w', W + 'px');
@@ -1491,7 +1496,7 @@ async function openFile(handle, path, single = false) {
 }
 
 function showDocName() {
-  const name = state.file ? state.file.path : '';
+  const name = !state.file ? '' : PHONE.matches ? state.file.handle.name.replace(/\.(md|markdown|txt)$/i, '') : state.file.path;
   $('docName').textContent = name;
   document.title = state.file ? state.file.handle.name.replace(/\.(md|markdown|txt)$/i, '') + ' — Capital' : 'Capital';
 }
@@ -1677,6 +1682,8 @@ async function openDriveFolder() {
 }
 
 async function restoreRoot() {
+  // Antes se podía elegir toda la unidad de Drive; ahora hay que volver a elegir una carpeta
+  if ((pref('driveRoot', null) || {}).id === 'root') { setPref('driveRoot', null); setPref('rootKind', 'local'); setPref('lastFile', null); }
   const dr = pref('driveRoot', null);
   if (!FS_OK) {
     $('treeEmpty').querySelector('p').textContent = 'En este equipo, Capital abre tus textos desde Google Drive.';
@@ -2123,6 +2130,43 @@ function toggleFocus() {
   else markCurrentBlock();
   setPref('focus', on);
 }
+
+/* ---------- Teléfono: panel con todas las opciones (⋯) ---------- */
+// Arma el panel con los mismos botones de los menús Archivo y Visualización
+function openSheet() {
+  closeMenus();
+  const body = $('mSheetBody');
+  body.innerHTML = '';
+  const hide = new Set(['toggleSidebar', 'toggleZoomBar', 'showFiles', 'showOutline']);
+  if (!FS_OK) ['openFolder', 'openOneFile', 'newFolder'].forEach((c) => hide.add(c));
+  for (const list of document.querySelectorAll('.menubar .menu-list[role="menu"]')) {
+    const sec = document.createElement('section');
+    sec.className = 'm-sec';
+    sec.innerHTML = '<h3></h3>';
+    sec.firstChild.textContent = list.parentElement.querySelector('.menu-btn').textContent;
+    for (const el of list.children) {
+      if (el.tagName !== 'BUTTON' || hide.has(el.dataset.cmd)) continue;
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.dataset.cmd = el.dataset.cmd;
+      b.className = el.className;
+      b.textContent = el.childNodes[0].textContent;
+      sec.append(b);
+    }
+    if (sec.children.length > 1) body.append(sec);
+  }
+  body.insertAdjacentHTML('beforeend', '<p class="m-version"></p>');
+  body.lastChild.textContent = $('appVersion').textContent;
+  $('mSheet').hidden = false;
+}
+const closeSheet = () => { $('mSheet').hidden = true; };
+$('mMore').onclick = openSheet;
+$('mSheet').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-cmd]');
+  if (b) { closeSheet(); COMMANDS[b.dataset.cmd](); return; }
+  if (e.target === $('mSheet')) closeSheet();
+});
+PHONE.addEventListener('change', () => { closeSheet(); showDocName(); layout(); });
 
 /* ---------- Menús y atajos ---------- */
 const COMMANDS = {
