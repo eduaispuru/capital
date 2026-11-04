@@ -495,6 +495,19 @@ body[data-source="yes"] .book::before {
 .v-nav span { margin-left: 4px; font: italic 14px var(--font-side); color: var(--ink-faint); white-space: nowrap; }
 @keyframes v-flash { from { background-color: rgb(138 47 40 / .14); } to { background-color: transparent; } }
 .v-flash { animation: v-flash 1.2s ease-out; }
+/* Elegir carpeta de Google Drive */
+.dp-box { width: min(560px, 100%); height: min(620px, 100%); }
+.dp-crumbs { margin: 0; padding: 12px 24px; font: italic 15px var(--font-side); color: var(--ink-soft); border-bottom: 1px solid var(--side-line); }
+.dp-list { flex: 1; overflow-y: auto; padding: 8px 12px; display: grid; align-content: start; gap: 2px; }
+.dp-item { text-align: left; padding: 8px 12px; border-radius: 4px; font-size: 17px; }
+.dp-item::before { content: '▸'; color: var(--ink-faint); margin-right: 10px; font-size: 13px; }
+.dp-item:hover { background: var(--hover); }
+.dp-up::before { content: ''; margin: 0; }
+.dp-up { color: var(--ink-soft); font-style: italic; }
+.dp-wait { padding: 8px 12px; margin: 0; font: italic 15px var(--font-side); color: var(--ink-faint); }
+.dp-hint { flex: 1; font: italic 14px var(--font-side); color: var(--ink-faint); }
+#driveBar { top: auto; bottom: calc(var(--status-h) + 60px); }
+
 /* Comparar y editar: dos columnas alineadas por párrafo */
 .vs-head { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; position: sticky; top: -18px; z-index: 1; background: var(--paper); padding: 4px 0 10px; margin-bottom: 6px; border-bottom: 1px solid var(--side-line); font: 500 11.5px var(--font-side); letter-spacing: .2em; text-transform: uppercase; color: var(--ink-faint); }
 .vs-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 28px; row-gap: 14px; }

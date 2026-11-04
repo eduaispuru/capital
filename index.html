@@ -18,6 +18,7 @@
     <button class="menu-btn" type="button" aria-haspopup="true">Archivo</button>
     <div class="menu-list" role="menu">
       <button type="button" role="menuitem" data-cmd="openFolder">Abrir carpeta…</button>
+      <button type="button" role="menuitem" data-cmd="openDrive">Abrir carpeta de Google Drive…</button>
       <button type="button" role="menuitem" data-cmd="openOneFile">Abrir archivo…<kbd>Ctrl+O</kbd></button>
       <button type="button" role="menuitem" data-cmd="newFile">Nuevo archivo<kbd>Ctrl+N</kbd></button>
       <button type="button" role="menuitem" data-cmd="newFolder">Nueva carpeta</button>
@@ -65,7 +66,7 @@
 <div class="shell" id="shell">
   <aside class="sidebar" id="sidebar">
     <header class="side-head">
-      <p class="eyebrow">Biblioteca</p>
+      <p class="eyebrow" id="sideEyebrow">Biblioteca</p>
       <h2 class="side-title" id="sideTitle">Capital</h2>
       <div class="fleuron" aria-hidden="true">❦</div>
     </header>
@@ -80,6 +81,7 @@
         <p>Elegí la carpeta donde guardás tus escritos.</p>
         <button type="button" class="reopen" id="reopenBtn" hidden></button>
         <button type="button" class="pill" id="openFolderBtn">Abrir carpeta</button>
+        <button type="button" class="pill" id="openDriveBtn">Abrir desde Google Drive</button>
         <p class="hint">En la ventana que se abre solo se ven carpetas, no archivos. Entrá a la carpeta y apretá <b>Seleccionar carpeta</b>; tus archivos .md van a aparecer acá.</p>
         <button type="button" class="link" id="openFileBtn">O abrir un solo archivo .md</button>
       </div>
@@ -193,11 +195,32 @@
   </section>
 </div>
 
+<div class="update-bar" id="driveBar" role="status" hidden>
+  <span>Se cortó la conexión con Google Drive.</span>
+  <button type="button" id="driveReconnect">Reconectar</button>
+</div>
+
+<div class="versions" id="drivePick" hidden>
+  <section class="v-box dp-box" role="dialog" aria-modal="true" aria-labelledby="dpTitle">
+    <header class="v-head">
+      <h2 id="dpTitle">Elegí la carpeta de tus textos</h2>
+      <button type="button" class="drawer-close" data-close aria-label="Cerrar">×</button>
+    </header>
+    <p class="dp-crumbs" id="dpCrumbs"></p>
+    <div class="dp-list" id="dpList"></div>
+    <footer class="v-foot">
+      <span class="dp-hint">Entrá a la carpeta (por ejemplo, Capital Escritorio) y tocá el botón.</span>
+      <button type="button" class="v-restore" id="dpUse">Usar esta carpeta</button>
+    </footer>
+  </section>
+</div>
+
 <div class="spell-menu" id="spellMenu" role="menu" hidden></div>
 
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script src="vendor/vditor/dist/index.min.js"></script>
+<script src="drive.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

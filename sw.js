@@ -1,12 +1,13 @@
 // Guarda la app en caché para que funcione sin conexión.
 // Al cambiar archivos de la app, subí VERSION para que se actualice.
-const VERSION = 'capital-v37';
+const VERSION = 'capital-v38';
 const CORE = [
   './',
   'index.html',
   'styles.css',
   'fonts.css',
   'app.js',
+  'drive.js',
   'spell-worker.js',
   'dict/es.aff',
   'dict/es.dic',

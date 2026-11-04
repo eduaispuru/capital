@@ -955,15 +955,23 @@ async function save() {
     await w.write(text);
     await w.close();
     if (currentText() === text) { state.dirty = false; setSaveState('Guardado'); }
+    const u = pref('driveUnsaved', null);
+    if (u && u.key === unsavedKey()) setPref('driveUnsaved', null);
     snapshot(text);
   } catch (e) {
+    // Con Drive, si se corta la conexión, lo escrito queda guardado en este equipo hasta reconectar
+    if (state.root && state.root.drive && !state.file.single) setPref('driveUnsaved', { key: unsavedKey(), text, at: Date.now() });
+    if (e.name === 'DriveAuthError') { setSaveState('Sin guardar · reconectá Google Drive'); return; }
     setSaveState('No se pudo guardar');
     toast('No se pudo guardar: ' + (e.message || e.name));
   }
 }
+const unsavedKey = (path = state.file && state.file.path) => state.root && state.root.drive ? state.root.id + '/' + path : null;
 
 async function saveAs() {
-  if (!('showSaveFilePicker' in window)) { toast('Este navegador no puede guardar archivos. Usá Chrome o Edge.'); return; }
+  // Con una carpeta de Drive (o sin "Guardar como" en el navegador), se crea el texto en la carpeta
+  if (state.root && (state.root.drive || !('showSaveFilePicker' in window))) { askName('file'); return; }
+  if (!('showSaveFilePicker' in window)) { toast('Para guardar, abrí tu carpeta de Google Drive desde Archivo.'); return; }
   try {
     const handle = await showSaveFilePicker({
       suggestedName: 'sin-titulo.md',
@@ -1461,9 +1469,18 @@ async function openFile(handle, path, single = false) {
     const text = await f.text();
     state.file = { handle, path, single, opened: text, openedAt: f.lastModified };
     loadBookStyle();
-    setText(text);
+    // Cambios que no llegaron a Drive porque se cortó la conexión
+    const u = pref('driveUnsaved', null);
+    const pendingText = !single && u && u.key === unsavedKey(path) && u.at > f.lastModified && u.text !== text ? u.text : null;
+    setText(pendingText ?? text);
     showDocName();
     setSaveState('Guardado');
+    if (pendingText != null) {
+      state.dirty = true;
+      setSaveState('Sin guardar');
+      toast('Recuperé lo que habías escrito y no llegó a guardarse en Drive');
+      onInput.timer = setTimeout(save, 1500);
+    }
     setPref('lastFile', path);
     markActive();
     if (innerWidth <= 640) { shell.classList.add('no-side'); syncBars(); }
@@ -1589,6 +1606,7 @@ function markActive() {
 async function mountRoot(handle) {
   state.root = handle;
   $('sideTitle').textContent = handle.name;
+  $('sideEyebrow').textContent = handle.drive ? 'Google Drive' : 'Biblioteca';
   state.openDirs = new Set(pref('openDirs', []));
   $('treeEmpty').hidden = true;
   $('sideFoot').hidden = false;
@@ -1618,7 +1636,7 @@ async function resolvePath(root, path) {
 }
 
 async function openFolder() {
-  if (!FS_OK) { toast('Este navegador no puede abrir carpetas. Usá Chrome o Edge.'); return; }
+  if (!FS_OK) return openDriveFolder();
   try {
     const handle = await showDirectoryPicker({ id: 'tinta', mode: 'readwrite' });
     if (state.dirty && state.file) await save();
@@ -1626,6 +1644,7 @@ async function openFolder() {
     setPref('lastFile', null);
     setPref('openDirs', []);
     await kv('root', handle).catch(() => {});
+    setPref('rootKind', 'local');
     await mountRoot(handle);
   } catch (e) { if (e.name !== 'AbortError') toast('No se pudo abrir la carpeta: ' + e.message); }
 }
@@ -1641,12 +1660,37 @@ async function openOneFile() {
   } catch (e) { if (e.name !== 'AbortError') toast('No se pudo abrir el archivo: ' + e.message); }
 }
 
+// Carpeta de Google Drive: hace falta entrar con tu cuenta (la ventanita de Google)
+async function openDriveFolder() {
+  try {
+    await driveSignIn();
+    const folder = await pickDriveFolder();
+    if (!folder) return;
+    if (state.dirty && state.file) await save();
+    state.file = null;
+    setPref('lastFile', null);
+    setPref('openDirs', []);
+    setPref('rootKind', 'drive');
+    setPref('driveRoot', folder);
+    await mountRoot(new DriveDir(folder.id, folder.name));
+  } catch (e) { toast(e.message || 'No se pudo abrir Google Drive'); }
+}
+
 async function restoreRoot() {
+  const dr = pref('driveRoot', null);
   if (!FS_OK) {
-    $('treeEmpty').querySelector('p').textContent = 'Este navegador no permite abrir carpetas. Usá Chrome o Edge.';
-    $('openFolderBtn').hidden = true;
+    $('treeEmpty').querySelector('p').textContent = 'En este equipo, Capital abre tus textos desde Google Drive.';
+    $('openFolderBtn').hidden = $('openFileBtn').hidden = true;
+    $('treeEmpty').querySelector('.hint').hidden = true;
+  }
+  if (pref('rootKind', 'local') === 'drive' && dr) {
+    const btn = $('reopenBtn');
+    btn.textContent = 'Seguir en «' + dr.name + '» (Google Drive)';
+    btn.hidden = false;
+    btn.onclick = () => driveSignIn().then(() => mountRoot(new DriveDir(dr.id, dr.name))).catch((e) => toast(e.message));
     return;
   }
+  if (!FS_OK) return;
   const handle = await kv('root').catch(() => null);
   if (!handle) return;
   const perm = await handle.queryPermission({ mode: 'readwrite' });
@@ -2084,6 +2128,7 @@ function toggleFocus() {
 const COMMANDS = {
   openFolder,
   openOneFile,
+  openDrive: openDriveFolder,
   newFile: () => askName('file'),
   newFolder: () => askName('folder'),
   save,
@@ -2153,6 +2198,12 @@ $('vCopy').onclick = () => navigator.clipboard.writeText(vstate.text).then(() =>
 $('versions').addEventListener('click', (e) => { if (e.target === $('versions') || e.target.closest('[data-close]')) closeVersions(); });
 $('tabOutline').onclick = () => showTab('outline');
 $('openFolderBtn').onclick = openFolder;
+$('openDriveBtn').onclick = openDriveFolder;
+$('driveReconnect').onclick = () => driveSignIn().then(() => { if (state.dirty) save(); }).catch((e) => toast(e.message));
+// La conexión con Drive dura una hora: si falta poco, se renueva con el próximo clic
+document.addEventListener('pointerdown', () => {
+  if (state.root && state.root.drive && drive.token && drive.expires - Date.now() < 5 * 60000 && !drive.signingIn) driveSignIn().catch(() => {});
+}, true);
 $('openFileBtn').onclick = openOneFile;
 document.addEventListener('selectionchange', () => {
   markCurrentBlock();
@@ -2273,6 +2324,9 @@ window.addEventListener('beforeunload', (e) => { if (state.dirty) { save(); e.pr
   new ResizeObserver(() => { if (desk.clientWidth && desk.clientWidth !== lastDeskW) { lastDeskW = desk.clientWidth; layout(); } }).observe(desk);
   document.fonts.addEventListener('loadingdone', paginate);
   await restoreRoot().catch((e) => console.warn(e));
+  // Si se usa Drive, se deja lista la conexión con Google (así la ventanita abre enseguida al tocar)
+  if ((!FS_OK || pref('rootKind', 'local') === 'drive') && navigator.onLine) loadGoogleScript().catch(() => {});
+  ['openDriveBtn', 'reopenBtn'].forEach((id) => $(id).addEventListener('pointerenter', () => loadGoogleScript().catch(() => {}), { once: true }));
 
   // Abrir un .md con doble clic cuando la app está instalada
   if ('launchQueue' in window) {
