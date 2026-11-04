@@ -1824,7 +1824,13 @@ window.addEventListener('beforeunload', (e) => { if (state.dirty) { save(); e.pr
   // Al escribir, Chrome a veces corre la vista aunque el cursor ya se veía (pasa con el texto
   // repartido en páginas y las notas al pie). Si el cursor se veía donde estaba la vista, vuelve ahí.
   // Rueda, clic o teclas de desplazamiento son movimientos tuyos y no se tocan.
-  $('editor').addEventListener('beforeinput', () => { state.typed = { at: performance.now(), top: desk.scrollTop }; }, true);
+  // Si venís escribiendo seguido (o con una tecla apretada), se conserva la posición buena anterior:
+  // la letra nueva puede llegar antes de que se corrija el salto de la anterior.
+  $('editor').addEventListener('beforeinput', () => {
+    const now = performance.now();
+    const t = state.typed;
+    state.typed = { at: now, top: t && now - t.at < 1500 ? t.top : desk.scrollTop };
+  }, true);
   const userScroll = () => { state.typed = null; };
   ['wheel', 'mousedown', 'touchstart'].forEach((ev) => document.addEventListener(ev, userScroll, { capture: true, passive: true }));
   document.addEventListener('keydown', (e) => { if (/^(Page|Home|End|Arrow)/.test(e.key)) userScroll(); }, true);
