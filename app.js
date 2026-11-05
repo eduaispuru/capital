@@ -218,8 +218,10 @@ function layout() {
   // el PDF sale con los mismos cortes de página y notas al pie que se ven en pantalla
   const print = state.print && paged;
   const fit = (desk.clientWidth - 32) / base;
-  const W = print ? mw * 96 / 25.4 : phone ? desk.clientWidth : Math.round(base * (state.zoom > 1 ? state.zoom : Math.max(280 / base, Math.min(state.zoom, fit))));
+  // En el teléfono, con la lista de textos abierta el escritorio está oculto (mide 0): se usa el ancho de la pantalla
+  const W = print ? mw * 96 / 25.4 : phone ? (desk.clientWidth || document.documentElement.clientWidth) : Math.round(base * (state.zoom > 1 ? state.zoom : Math.max(280 / base, Math.min(state.zoom, fit))));
   const z = phone ? state.zoom : W / base;
+  state.laidW = desk.clientWidth;
   const f = FONTS.find((x) => x.id === style.font) || FONTS[0];
   document.documentElement.style.setProperty('--fs', (style.size * (f.scale || 1) * z).toFixed(3) + 'px');
   document.documentElement.style.setProperty('--zoom', z);
@@ -2364,8 +2366,9 @@ window.addEventListener('beforeunload', (e) => { if (state.dirty) { save(); e.pr
     }
   }).observe(editorRoot(), { childList: true });
   // El ancho del escritorio cambia al mostrar u ocultar la barra lateral o al cambiar la ventana
-  let lastDeskW = 0;
-  new ResizeObserver(() => { if (desk.clientWidth && desk.clientWidth !== lastDeskW) { lastDeskW = desk.clientWidth; layout(); } }).observe(desk);
+  // Se compara con el ancho que usó el último acomodo (no con la última medida): si se acomodó con
+  // el escritorio oculto, al volver a verse se acomoda de nuevo
+  new ResizeObserver(() => { if (desk.clientWidth && desk.clientWidth !== state.laidW) layout(); }).observe(desk);
   document.fonts.addEventListener('loadingdone', paginate);
   await restoreRoot().catch((e) => console.warn(e));
   // Si se usa Drive, se deja lista la conexión con Google (así la ventanita abre enseguida al tocar)
