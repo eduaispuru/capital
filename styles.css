@@ -155,6 +155,13 @@ li:has(> .row.dir:hover, > .dir-add:hover) > .row.dir .count { visibility: hidde
 .toc .pg { font-variant-numeric: oldstyle-nums tabular-nums; color: var(--ink-soft); }
 .depth-1 > .toc-row .toc { font-style: italic; font-size: 15.5px; color: var(--ink-soft); }
 .depth-2 > .toc-row .toc { font-size: 14.5px; color: var(--ink-soft); }
+.toc-item { transition: transform .16s ease; }
+.toc-row { touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.toc-item.dragging { transition: none; position: relative; z-index: 2; }
+.toc-item.dragging > .toc-row { background: var(--paper); border-radius: 6px; box-shadow: 0 6px 18px -6px rgb(60 50 30 / .35); }
+.toc-item.dragging > .toc-row .toc { color: var(--ribbon); }
+body.toc-dragging, body.toc-dragging * { cursor: grabbing !important; }
+#moveBar { top: auto; bottom: calc(var(--status-h) + 16px); }
 .outline .none { color: var(--ink-faint); font: italic 15px var(--font-side); padding: 8px 0; }
 
 /* ---------- Escritorio y páginas ---------- */

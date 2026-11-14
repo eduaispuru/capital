@@ -1760,18 +1760,19 @@ async function askName(kind) {
 /* ---------- Índice ---------- */
 // Todos los niveles de # en familias: cada título agrupa a los de nivel más profundo que lo siguen
 function renderOutline() {
+  if (state.tocDrag) return; // mientras arrastrás un capítulo, el índice no se rehace
   const list = $('outline');
   list.innerHTML = '';
   const root = editorRoot();
   const hs = root ? [...root.querySelectorAll(':scope > :is(h1, h2, h3, h4, h5, h6)')] : [];
   const top = { level: 0, children: [] };
   const stack = [top];
-  for (const h of hs) {
+  for (const [i, h] of hs.entries()) {
     const copy = h.cloneNode(true);
     copy.querySelectorAll('.vditor-ir__marker').forEach((m) => m.remove());
     const text = copy.textContent.trim();
     if (!text) continue;
-    const item = { h, text, level: +h.tagName[1], children: [] };
+    const item = { h, i, text, level: +h.tagName[1], children: [] };
     while (stack[stack.length - 1].level >= item.level) stack.pop();
     stack[stack.length - 1].children.push(item);
     stack.push(item);
@@ -1799,9 +1800,11 @@ function renderOutline() {
       const pg = pageOf(it.h);
       if (pg) b.querySelector('.pg').textContent = pg;
       else b.querySelector('.dots').hidden = true;
-      b.onclick = () => it.h.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      b.onclick = () => { if (!li.dragged) it.h.scrollIntoView({ block: 'start', behavior: 'smooth' }); };
       row.append(caret, b);
       li.append(row);
+      li.item = it;
+      row.addEventListener('pointerdown', (e) => tocDragStart(e, li, items));
       if (it.children.length) {
         const sub = document.createElement('ol');
         build(it.children, sub, depth + 1, key);
@@ -1826,6 +1829,144 @@ function renderOutline() {
     }
   };
   build(top.children, list, 0, '');
+}
+
+/* ---------- Mover capítulos arrastrándolos en el índice ---------- */
+// Como las pestañas de Chrome: agarrás un capítulo y los de al lado se corren para hacerle lugar.
+// Se mueve entre los de su mismo nivel, con todo lo que tiene adentro (texto y subtítulos).
+// Con el dedo: dejarlo apretado un instante y después arrastrar (si no, la lista se desplaza).
+function tocDragStart(e, li, items) {
+  if (e.button !== 0 || e.target.closest('.toc-caret')) return;
+  const sibs = [...li.parentElement.children].filter((x) => x.classList.contains('toc-item'));
+  if (sibs.length < 2) return;
+  const panel = $('panelOutline');
+  const touch = e.pointerType !== 'mouse';
+  const idx = sibs.indexOf(li);
+  const rects = sibs.map((x) => x.getBoundingClientRect());
+  const startY = e.clientY + panel.scrollTop;
+  let active = false, lastY = e.clientY, target = idx, frame = 0;
+  const timer = touch ? setTimeout(() => begin(), 350) : 0;
+  const begin = () => {
+    active = true;
+    state.tocDrag = true;
+    li.classList.add('dragging');
+    document.body.classList.add('toc-dragging');
+    if (touch && navigator.vibrate) navigator.vibrate(12);
+    const loop = () => { autoScroll(); place(); frame = requestAnimationFrame(loop); };
+    frame = requestAnimationFrame(loop);
+  };
+  // Cerca de los bordes del panel, la lista se desplaza sola
+  const autoScroll = () => {
+    const r = panel.getBoundingClientRect();
+    if (lastY < r.top + 40) panel.scrollTop -= 8;
+    else if (lastY > r.bottom - 40) panel.scrollTop += 8;
+  };
+  const place = () => {
+    const off = lastY + panel.scrollTop - startY;
+    li.style.transform = `translateY(${off}px)`;
+    const center = rects[idx].top + rects[idx].height / 2 + off;
+    let t = idx;
+    rects.forEach((r, k) => {
+      const mid = r.top + r.height / 2;
+      if (k < idx && center < mid) t = Math.min(t, k);
+      if (k > idx && center > mid) t = Math.max(t, k);
+    });
+    target = t;
+    const h = rects[idx].height;
+    sibs.forEach((x, k) => {
+      if (k === idx) return;
+      const shift = idx < t && k > idx && k <= t ? -h : t < idx && k >= t && k < idx ? h : 0;
+      x.style.transform = shift ? `translateY(${shift}px)` : '';
+    });
+  };
+  const onMove = (ev) => {
+    lastY = ev.clientY;
+    if (!active && Math.abs(ev.clientY - e.clientY) > 6) {
+      if (touch) { finish(); return; } // con el dedo, moverse antes de tiempo es desplazar la lista
+      begin();
+    }
+  };
+  const noScroll = (ev) => { if (active) ev.preventDefault(); };
+  const finish = (ev) => {
+    clearTimeout(timer);
+    cancelAnimationFrame(frame);
+    removeEventListener('pointermove', onMove);
+    removeEventListener('pointerup', finish);
+    removeEventListener('pointercancel', finish);
+    removeEventListener('touchmove', noScroll);
+    if (!active) return;
+    li.dragged = true;
+    setTimeout(() => { li.dragged = false; }, 0);
+    sibs.forEach((x) => { x.style.transform = ''; });
+    li.classList.remove('dragging');
+    document.body.classList.remove('toc-dragging');
+    state.tocDrag = false;
+    if (ev && ev.type === 'pointerup' && target !== idx) {
+      const from = items[idx], to = items[target];
+      moveChapter(from, target < idx ? { before: to.i } : { after: to.i });
+    }
+  };
+  addEventListener('pointermove', onMove);
+  addEventListener('pointerup', finish);
+  addEventListener('pointercancel', finish);
+  addEventListener('touchmove', noScroll, { passive: false });
+}
+
+// Títulos del Markdown (fuera de los bloques de código), con su renglón y su nivel
+function mdHeadings(lines) {
+  const out = [];
+  let fence = null;
+  lines.forEach((l, n) => {
+    const f = l.match(/^ {0,3}(`{3,}|~{3,})/);
+    if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length) fence = null; return; }
+    if (f) { fence = f[1]; return; }
+    const m = l.match(/^ {0,3}(#{1,6})(?:[ \t]|$)/);
+    if (m) out.push({ line: n, level: m[1].length });
+  });
+  return out;
+}
+
+async function moveChapter(item, where) {
+  const old = currentText();
+  const lines = old.split('\n');
+  const H = mdHeadings(lines);
+  const count = editorRoot().querySelectorAll(':scope > :is(h1, h2, h3, h4, h5, h6)').length;
+  if (H.length !== count) { toast('No se pudo mover el capítulo'); return; }
+  // Un capítulo llega hasta el próximo título de su mismo nivel o más importante
+  const end = (k) => { const n = H.findIndex((x, j) => j > k && x.level <= H[k].level); return n < 0 ? lines.length : H[n].line; };
+  const a0 = H[item.i].line, a1 = end(item.i);
+  let at = where.before != null ? H[where.before].line : end(where.after);
+  const block = lines.slice(a0, a1);
+  while (block.length && !block[block.length - 1].trim()) block.pop();
+  block.push('');
+  const rest = [...lines.slice(0, a0), ...lines.slice(a1)];
+  if (at > a0) at -= a1 - a0;
+  const pre = rest.slice(0, at), post = rest.slice(at);
+  if (pre.length && pre[pre.length - 1].trim()) pre.push('');
+  let text = [...pre, ...block, ...post].join('\n').replace(/\n{3,}$/, '\n');
+  if (!text.endsWith('\n')) text += '\n';
+  if (text === old) return;
+  await snapshot(old, true); // lo de antes queda en Versiones
+  applyMove(text, item.text);
+  const bar = $('moveBar');
+  $('moveMsg').textContent = 'Moviste «' + item.text + '».';
+  bar.hidden = false;
+  clearTimeout(moveChapter.timer);
+  moveChapter.timer = setTimeout(() => { bar.hidden = true; }, 8000);
+  $('moveUndo').onclick = () => { bar.hidden = true; applyMove(old, item.text); };
+}
+function applyMove(text, title) {
+  setText(text);
+  state.dirty = true;
+  setSaveState(state.file ? 'Sin guardar' : 'Sin archivo · Ctrl+S para guardar');
+  if (state.file) save();
+  // Vuelve a mostrar el capítulo movido
+  requestAnimationFrame(() => {
+    const h = [...editorRoot().querySelectorAll(':scope > :is(h1, h2, h3, h4, h5, h6)')].find((x) => {
+      const c = x.cloneNode(true); c.querySelectorAll('.vditor-ir__marker').forEach((m) => m.remove()); return c.textContent.trim() === title;
+    });
+    if (h) h.scrollIntoView({ block: 'start' });
+  });
 }
 
 /* ---------- Tipografía al escribir: « », guion de diálogo y listas ---------- */
