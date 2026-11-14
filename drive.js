@@ -129,6 +129,7 @@ class DriveDir {
     if (!f) throw new DOMException('No existe ' + name, 'NotFoundError');
     await driveJson('files/' + f.id + '?fields=id', 'PATCH', { trashed: true });
     driveForget(this.id);
+    return f.id;
   }
 }
 
@@ -151,6 +152,9 @@ class DriveFile {
     };
   }
 }
+
+// Saca un archivo de la papelera de Drive
+const driveRestore = (id) => driveJson('files/' + id + '?fields=id', 'PATCH', { trashed: false });
 
 /* Aviso cuando se corta la conexión (Google la da por una hora; volver a entrar es un clic) */
 function showDriveBar() { const b = document.getElementById('driveBar'); if (b) b.hidden = false; }

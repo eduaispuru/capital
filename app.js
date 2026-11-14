@@ -1576,8 +1576,41 @@ function fileItem(handle, path) {
   row.innerHTML = '<span class="label"></span>';
   row.querySelector('.label').textContent = handle.name.replace(/\.(md|markdown)$/i, '');
   row.title = handle.name;
-  row.addEventListener('click', () => openFile(handle, path));
+  row.addEventListener('click', () => { if (!row.held) openFile(handle, path); });
   li.append(row);
+  // Menú del archivo: clic derecho, el ⋯ que aparece al pasar el mouse, o dejarlo apretado en el teléfono
+  const items = () => [['Eliminar archivo', () => deleteFile(handle, path), 'danger']];
+  row.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    if (performance.now() - (state.touchAt || 0) < 1000) return;
+    openCtxMenu(e.clientX, e.clientY, items());
+  });
+  row.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse') return;
+    state.touchAt = performance.now();
+    row.held = false;
+    const y0 = e.clientY;
+    const t = setTimeout(() => {
+      row.held = true;
+      if (navigator.vibrate) navigator.vibrate(12);
+      const r = row.getBoundingClientRect();
+      openCtxMenu(r.left + 24, r.bottom, items());
+    }, 500);
+    const stop = (ev) => {
+      if (ev.type === 'pointermove' && Math.abs(ev.clientY - y0) < 8) return;
+      clearTimeout(t);
+      removeEventListener('pointermove', stop); removeEventListener('pointerup', stop); removeEventListener('pointercancel', stop);
+      if (row.held) setTimeout(() => { row.held = false; }, 400);
+    };
+    addEventListener('pointermove', stop); addEventListener('pointerup', stop); addEventListener('pointercancel', stop);
+  });
+  const more = document.createElement('button');
+  more.type = 'button';
+  more.className = 'row-more';
+  more.textContent = '⋯';
+  more.setAttribute('aria-label', 'Opciones de «' + handle.name + '»');
+  more.addEventListener('click', (e) => { e.stopPropagation(); const r = more.getBoundingClientRect(); openCtxMenu(r.left, r.bottom, items()); });
+  li.append(more);
   return li;
 }
 
@@ -1805,6 +1838,21 @@ function renderOutline() {
       li.append(row);
       li.item = it;
       row.addEventListener('pointerdown', (e) => tocDragStart(e, li, items));
+      const chapterMenu = () => [['Eliminar capítulo', () => deleteChapter(it), 'danger']];
+      row.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        if (performance.now() - (state.touchAt || 0) < 1000) return; // con el dedo el menú lo abre el arrastre
+        openCtxMenu(e.clientX, e.clientY, chapterMenu());
+      });
+      const more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'toc-more';
+      more.textContent = '⋯';
+      more.setAttribute('aria-label', 'Opciones de «' + it.text + '»');
+      more.addEventListener('pointerdown', (e) => e.stopPropagation());
+      more.addEventListener('click', (e) => { e.stopPropagation(); const r = more.getBoundingClientRect(); openCtxMenu(r.left, r.bottom, chapterMenu()); });
+      row.append(more);
+      li.chapterMenu = chapterMenu;
       if (it.children.length) {
         const sub = document.createElement('ol');
         build(it.children, sub, depth + 1, key);
@@ -1837,10 +1885,10 @@ function renderOutline() {
 // Con el dedo: dejarlo apretado un instante y después arrastrar (si no, la lista se desplaza).
 function tocDragStart(e, li, items) {
   if (e.button !== 0 || e.target.closest('.toc-caret')) return;
-  const sibs = [...li.parentElement.children].filter((x) => x.classList.contains('toc-item'));
-  if (sibs.length < 2) return;
-  const panel = $('panelOutline');
   const touch = e.pointerType !== 'mouse';
+  if (touch) state.touchAt = performance.now();
+  const sibs = [...li.parentElement.children].filter((x) => x.classList.contains('toc-item'));
+  const panel = $('panelOutline');
   const idx = sibs.indexOf(li);
   const rects = sibs.map((x) => x.getBoundingClientRect());
   const startY = e.clientY + panel.scrollTop;
@@ -1882,6 +1930,7 @@ function tocDragStart(e, li, items) {
   const onMove = (ev) => {
     lastY = ev.clientY;
     if (!active && Math.abs(ev.clientY - e.clientY) > 6) {
+      if (!touch && sibs.length < 2) { finish(); return; }
       if (touch) { finish(); return; } // con el dedo, moverse antes de tiempo es desplazar la lista
       begin();
     }
@@ -1904,6 +1953,10 @@ function tocDragStart(e, li, items) {
     if (ev && ev.type === 'pointerup' && target !== idx) {
       const from = items[idx], to = items[target];
       moveChapter(from, target < idx ? { before: to.i } : { after: to.i });
+    } else if (touch && ev && ev.type === 'pointerup') {
+      // Con el dedo: dejarlo apretado y soltar sin mover abre el menú del capítulo
+      const r = li.firstChild.getBoundingClientRect();
+      openCtxMenu(r.left + 24, r.bottom, li.chapterMenu());
     }
   };
   addEventListener('pointermove', onMove);
@@ -1948,13 +2001,116 @@ async function moveChapter(item, where) {
   if (text === old) return;
   await snapshot(old, true); // lo de antes queda en Versiones
   applyMove(text, item.text);
-  const bar = $('moveBar');
-  $('moveMsg').textContent = 'Moviste «' + item.text + '».';
-  bar.hidden = false;
-  clearTimeout(moveChapter.timer);
-  moveChapter.timer = setTimeout(() => { bar.hidden = true; }, 8000);
-  $('moveUndo').onclick = () => { bar.hidden = true; applyMove(old, item.text); };
+  showUndo('Moviste «' + item.text + '».', () => applyMove(old, item.text));
 }
+
+// Aviso abajo con "Deshacer", unos segundos
+function showUndo(msg, undo) {
+  const bar = $('moveBar');
+  $('moveMsg').textContent = msg;
+  bar.hidden = false;
+  clearTimeout(showUndo.timer);
+  showUndo.timer = setTimeout(() => { bar.hidden = true; }, 8000);
+  $('moveUndo').onclick = () => { bar.hidden = true; clearTimeout(showUndo.timer); undo(); };
+}
+
+// Borra el capítulo con todo su texto y subtítulos
+async function deleteChapter(item) {
+  if (!confirm('¿Eliminar el capítulo «' + item.text + '» con todo su texto?')) return;
+  const old = currentText();
+  const lines = old.split('\n');
+  const H = mdHeadings(lines);
+  const count = editorRoot().querySelectorAll(':scope > :is(h1, h2, h3, h4, h5, h6)').length;
+  if (H.length !== count) { toast('No se pudo eliminar el capítulo'); return; }
+  const n = H.findIndex((x, j) => j > item.i && x.level <= H[item.i].level);
+  const a0 = H[item.i].line, a1 = n < 0 ? lines.length : H[n].line;
+  const pre = lines.slice(0, a0), post = lines.slice(a1);
+  while (pre.length && !pre[pre.length - 1].trim() && post.length && !post[0].trim()) pre.pop();
+  let text = [...pre, ...post].join('\n').replace(/\n{3,}$/, '\n');
+  if (text.trim() && !text.endsWith('\n')) text += '\n';
+  await snapshot(old, true); // lo de antes queda en Versiones
+  applyMove(text, '');
+  showUndo('Eliminaste «' + item.text + '».', () => applyMove(old, item.text));
+}
+
+// Carpeta que contiene a un archivo, desde la carpeta abierta
+async function parentDir(path) {
+  let dir = state.root;
+  for (const part of path.split('/').slice(0, -1)) dir = await dir.getDirectoryHandle(part);
+  return dir;
+}
+
+// Borrar un archivo. En Drive va a la papelera de Drive (30 días). En la carpeta del equipo no hay
+// papelera (el navegador borra directo), así que se mueve a ".capital-papelera", dentro de la carpeta.
+const TRASH_DIR = '.capital-papelera';
+async function deleteFile(handle, path) {
+  const drive = state.root && state.root.drive;
+  const where = drive ? 'Va a la papelera de Google Drive (se puede recuperar durante 30 días).' : 'Va a la carpeta .capital-papelera, dentro de tu carpeta.';
+  if (!confirm('¿Eliminar «' + handle.name.replace(/\.(md|markdown|txt)$/i, '') + '»?\n\n' + where)) return;
+  const isOpen = state.file && !state.file.single && state.file.path === path;
+  try {
+    if (isOpen && state.dirty) await save();
+    const dir = await parentDir(path);
+    let undo;
+    if (drive) {
+      const id = await dir.removeEntry(handle.name);
+      undo = async () => { await driveRestore(id); driveForget(dir.id); };
+    } else {
+      // Copia a la papelera (con la misma ruta) y después se borra el original
+      const text = await (await handle.getFile()).text();
+      let bin = await state.root.getDirectoryHandle(TRASH_DIR, { create: true });
+      for (const part of path.split('/').slice(0, -1)) bin = await bin.getDirectoryHandle(part, { create: true });
+      let name = handle.name;
+      if (await bin.getFileHandle(name).then(() => true, () => false)) name = name.replace(/(\.\w+)?$/, ' (' + versionName(new Date()).replace('.md', '') + ')$1');
+      const w = await (await bin.getFileHandle(name, { create: true })).createWritable();
+      await w.write(text);
+      await w.close();
+      await dir.removeEntry(handle.name);
+      undo = async () => {
+        const back = await (await dir.getFileHandle(handle.name, { create: true })).createWritable();
+        await back.write(text);
+        await back.close();
+        await bin.removeEntry(name).catch(() => {});
+      };
+    }
+    if (isOpen) {
+      state.file = null;
+      setPref('lastFile', null);
+      setText('');
+      showDocName();
+      setSaveState('');
+    }
+    await refreshTreeAt(path);
+    showUndo('Eliminaste «' + handle.name.replace(/\.(md|markdown|txt)$/i, '') + '».', async () => {
+      try { await undo(); await refreshTreeAt(path); toast('Recuperado'); } catch (e) { toast('No se pudo recuperar: ' + e.message); }
+    });
+  } catch (e) { toast('No se pudo eliminar: ' + (e.message || e.name)); }
+}
+async function refreshTreeAt(path) {
+  const parent = path.split('/').slice(0, -1).join('/');
+  const ul = tree.querySelector(`li[data-path="${CSS.escape(parent)}"] > ul`);
+  if (ul) await refreshDir(await parentDir(path), ul, parent);
+}
+
+// Menú chico junto al puntero (o al dedo)
+function openCtxMenu(x, y, items) {
+  const m = $('ctxMenu');
+  m.innerHTML = '';
+  for (const [label, fn, cls] of items) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    if (cls) b.className = cls;
+    b.onclick = () => { closeCtxMenu(); fn(); };
+    m.append(b);
+  }
+  m.hidden = false;
+  m.style.left = Math.max(8, Math.min(x, innerWidth - m.offsetWidth - 8)) + 'px';
+  m.style.top = Math.max(8, Math.min(y, innerHeight - m.offsetHeight - 8)) + 'px';
+}
+function closeCtxMenu() { $('ctxMenu').hidden = true; }
+document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#ctxMenu')) closeCtxMenu(); }, true);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeCtxMenu(); });
 function applyMove(text, title) {
   setText(text);
   state.dirty = true;

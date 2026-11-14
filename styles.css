@@ -162,6 +162,22 @@ li:has(> .row.dir:hover, > .dir-add:hover) > .row.dir .count { visibility: hidde
 .toc-item.dragging > .toc-row .toc { color: var(--ribbon); }
 body.toc-dragging, body.toc-dragging * { cursor: grabbing !important; }
 #moveBar { top: auto; bottom: calc(var(--status-h) + 16px); }
+.toc-more { flex: none; width: 22px; color: var(--ink-faint); font: 15px var(--ui); opacity: 0; border-radius: 4px; }
+.toc-row:hover .toc-more, .toc-more:focus-visible { opacity: 1; }
+.toc-more:hover { color: var(--ribbon); background: var(--hover); }
+.row.file { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.row-more {
+  position: absolute; top: 3px; right: 0; width: 24px; height: 24px; border-radius: 50%;
+  font: 15px/22px var(--ui); text-align: center; color: var(--ink-soft); background: var(--side); opacity: 0;
+}
+li:has(> .row.file:hover, > .row-more:hover) > .row-more, .row-more:focus-visible { opacity: 1; }
+.row-more:hover { background: var(--hover); color: var(--ribbon); }
+.ctx-menu { min-width: 190px; }
+.ctx-menu button { display: block; width: 100%; text-align: left; padding: 7px 12px; border-radius: 4px; font: 14.5px var(--ui); }
+.ctx-menu button:hover { background: var(--hover); }
+.ctx-menu .danger { color: #9b3b30; }
+@media (hover: none) { .toc-more, .row-more { display: none; } }
+@media screen and (max-width: 640px) { .ctx-menu button { min-height: 46px; font-size: 16px; } }
 .outline .none { color: var(--ink-faint); font: italic 15px var(--font-side); padding: 8px 0; }
 
 /* ---------- Escritorio y páginas ---------- */
