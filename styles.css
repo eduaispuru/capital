@@ -704,3 +704,108 @@ body.printing[data-paged="yes"] [data-type="footnotes-block"] { display: none !i
   body[data-paged="no"][data-level="2"] .vditor-reset > h1 { padding-top: var(--title-space-print) !important; break-after: page; }
   body[data-paged="no"] .vditor-reset hr { break-after: page !important; visibility: hidden; height: 0 !important; margin: 0 !important; border: 0 !important; box-shadow: none !important; background: none !important; }
 }
+
+/* ---------- Diseño: clásico + Gabinete bordó ----------
+   Del clásico: hojas con sombra, papel cálido, textura de la biblioteca, títulos en serif cursiva,
+   ❦, rótulos en versalitas espaciadas, nombres de textos y barra inferior en letra literaria.
+   Del bordó: lo elegido en bloque bordó sólido, pestañas y botones en bloques, barra de arriba clara
+   con filete grueso, controles y menús en Hanken Grotesk, esquinas rectas en los controles. */
+:root {
+  --g-acento: #7d1a2a; --g-sobre: #f2f0ec; --g-sobre-suave: #d8cfc6; --g-texto: #222222;
+  --g-bloque: #e4dccf; --g-bloque-hover: #d9cfbf;
+  --g-sans: "Hanken Grotesk", system-ui, sans-serif;
+  --ribbon: var(--g-acento); --ui: var(--g-sans);
+}
+
+/* Barra de arriba: clara, con filete grueso (bordó) */
+.menubar { background: var(--paper); color: var(--g-texto); height: 40px; border-bottom: 3px solid var(--g-texto); font: 600 14px var(--g-sans); padding: 0 12px; }
+.menu-btn { padding: 6px 10px; border-radius: 0; }
+.menu-btn:hover, .menu.open .menu-btn, .menu-btn[aria-pressed="true"] { background: var(--g-bloque); }
+.doc-name { color: var(--g-texto); font: italic 400 16px var(--font-side); }
+.save-state { color: var(--ink-faint); font-weight: 400; }
+.menu-list { background: var(--paper); border: 0; border-top: 3px solid var(--g-texto); border-radius: 0; padding: 4px; top: calc(100% + 3px); box-shadow: 0 12px 28px -10px rgb(60 50 30 / .3); }
+.menu-list button { font: 500 14px var(--g-sans); border-radius: 0; }
+.menu-list button:hover { background: var(--g-acento); color: var(--g-sobre); }
+.menu-list button:hover kbd { color: var(--g-sobre-suave); }
+.menu-list hr { border-top: 1px solid var(--side-line); }
+
+/* Biblioteca: papel con textura y título en serif cursiva (clásico); pestañas y elegido en bloques (bordó) */
+.side-tabs { gap: 4px; border-bottom: 0; padding-bottom: 0; margin-top: 14px; }
+.side-tabs > span { display: none; }
+.side-tabs button { font: 600 13.5px var(--g-sans); letter-spacing: 0; text-transform: none; padding: 7px 14px; border: 0; background: var(--g-bloque); color: var(--g-texto); }
+.side-tabs button:hover { background: var(--g-bloque-hover); }
+.side-tabs button[aria-selected="true"] { background: var(--g-texto); color: var(--g-sobre); }
+.row.file { padding: 6px 10px 6px 12px; margin: 1px 0; }
+.row.file:hover { color: var(--g-acento); }
+.row.file.active { background: var(--g-acento); color: var(--g-sobre); font-style: italic; }
+.row.file.active::before { display: none; }
+.dir-add, .row-more { border-radius: 0; background: var(--g-bloque); color: var(--g-texto); }
+.side-foot { border-top: 0; gap: 4px; }
+.side-foot > span { display: none; }
+.side-foot button { font: 600 14px var(--g-sans); font-style: normal; color: var(--g-texto); background: var(--g-bloque); padding: 8px 12px; }
+.side-foot button:hover { background: var(--g-acento); color: var(--g-sobre); }
+.pill { border-radius: 0; border: 0; background: var(--g-texto); color: var(--g-sobre); font: 600 14px var(--g-sans); padding: 9px 16px; }
+.pill:hover { background: var(--g-acento); }
+
+/* Índice: serif como antes; al arrastrar, bloque bordó */
+.toc-item.dragging > .toc-row { background: var(--g-acento); border-radius: 0; }
+.toc-item.dragging > .toc-row .toc, .toc-item.dragging > .toc-row .pg { color: var(--g-sobre); }
+
+/* Botones flotantes y barra inferior */
+.to-end { background: var(--g-acento); color: var(--g-sobre); border: 0; opacity: .95; }
+.sb-btn:hover, .sb-btn[aria-pressed="true"], .sb-btn[aria-expanded="true"] { background: var(--g-texto); color: var(--g-sobre); border-radius: 0; }
+.zoom { border-radius: 0; }
+.zoom input { accent-color: var(--g-acento); }
+
+/* Panel de Estilo: encabezado y rótulos clásicos; opciones en bloques */
+.drawer { top: 40px; }
+.drawer-head { border-bottom: 3px solid var(--g-texto); }
+.presets { gap: 4px; }
+.preset { border: 0; border-radius: 0; background: var(--g-bloque); }
+.preset:hover { background: var(--g-bloque-hover); }
+.preset[aria-pressed="true"] { background: var(--g-acento); color: var(--g-sobre); box-shadow: none; }
+.preset[aria-pressed="true"] .pd { color: var(--g-sobre-suave); }
+.save-style { font: 600 14px var(--g-sans); font-style: normal; color: var(--g-texto); }
+.fonts { gap: 3px; }
+.font-opt { border-radius: 0; }
+.font-opt:hover { background: var(--g-bloque); }
+.font-opt[aria-pressed="true"] { background: var(--g-acento); color: var(--g-sobre); }
+.font-opt[aria-pressed="true"] .fd { color: var(--g-sobre-suave); }
+.font-opt[aria-pressed="true"]::before { display: none; }
+.seg { gap: 4px; }
+.seg button { border: 0; border-radius: 0; background: var(--g-bloque); font: 600 13.5px var(--g-sans); padding: 7px 13px; }
+.seg button:hover { background: var(--g-bloque-hover); }
+.seg button[aria-pressed="true"] { background: var(--g-acento); color: var(--g-sobre); }
+.range input, .check input { accent-color: var(--g-acento); }
+
+/* Versiones */
+.v-box { border-radius: 0; border: 0; }
+.v-head { border-bottom: 3px solid var(--g-texto); }
+.v-list { gap: 3px; }
+.v-item { font: 500 14px var(--g-sans); border-radius: 0; }
+.v-item[aria-pressed="true"] { background: var(--g-acento); color: var(--g-sobre); }
+.v-item[aria-pressed="true"]::before { display: none; }
+.v-restore { border-radius: 0; background: var(--g-acento); font: 700 14px var(--g-sans); padding: 9px 18px; }
+.v-copy { border-radius: 0; background: var(--g-bloque); color: var(--g-texto); font: 600 14px var(--g-sans); padding: 9px 16px; }
+.v-nav button { border: 0; border-radius: 0; background: var(--g-bloque); color: var(--g-texto); font-weight: 700; }
+.v-foot .seg button[aria-pressed="true"] { background: var(--g-acento); }
+
+/* Avisos y menús chicos */
+.update-bar, .toast { border-radius: 0; background: var(--g-acento); color: var(--g-sobre); font: 500 14px var(--g-sans); }
+.update-bar button { border-radius: 0; background: var(--g-sobre); color: var(--g-acento); font-weight: 700; }
+.spell-menu, .ctx-menu { border-radius: 0; border: 0; border-top: 3px solid var(--g-texto); background: var(--paper); }
+.ctx-menu button, .spell-menu button { border-radius: 0; }
+.ctx-menu .danger { color: var(--g-acento); font-weight: 700; }
+
+/* Teléfono */
+@media screen and (max-width: 640px) {
+  .menubar { height: calc(52px + env(safe-area-inset-top)); border-bottom: 3px solid var(--g-texto); }
+  .doc-name { font: italic 17px var(--font-side); }
+  .m-btn { color: var(--g-texto); border-radius: 0; }
+  .m-sheet-panel { border-radius: 0; border-top: 3px solid var(--g-texto); }
+  .m-grip { display: none; }
+  .m-sec button { border-radius: 0; font: 500 16px var(--g-sans); background: var(--g-bloque); margin-bottom: 3px; }
+  .m-sec .toggle.checked { background: var(--g-acento); color: var(--g-sobre); }
+  .m-sec .toggle.checked::after { color: var(--g-sobre); }
+  .drawer { top: calc(52px + env(safe-area-inset-top)); }
+}
