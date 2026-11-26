@@ -718,12 +718,12 @@ body.printing[data-paged="yes"] [data-type="footnotes-block"] { display: none !i
 }
 
 /* Barra de arriba: clara, con filete grueso (bordó) */
-.menubar { background: var(--paper); color: var(--g-texto); height: 40px; border-bottom: 3px solid var(--g-texto); font: 600 14px var(--g-sans); padding: 0 12px; }
+.menubar { background: var(--paper); color: var(--g-texto); height: 34px; border-bottom: 1px solid var(--side-line); font: 600 14px var(--g-sans); padding: 0 12px; }
 .menu-btn { padding: 6px 10px; border-radius: 0; }
 .menu-btn:hover, .menu.open .menu-btn, .menu-btn[aria-pressed="true"] { background: var(--g-bloque); }
 .doc-name { color: var(--g-texto); font: italic 400 16px var(--font-side); }
 .save-state { color: var(--ink-faint); font-weight: 400; }
-.menu-list { background: var(--paper); border: 0; border-top: 3px solid var(--g-texto); border-radius: 0; padding: 4px; top: calc(100% + 3px); box-shadow: 0 12px 28px -10px rgb(60 50 30 / .3); }
+.menu-list { background: var(--paper); border: 0; border-top: 3px solid var(--g-texto); border-radius: 0; padding: 4px; top: calc(100% + 1px); box-shadow: 0 12px 28px -10px rgb(60 50 30 / .3); }
 .menu-list button { font: 500 14px var(--g-sans); border-radius: 0; }
 .menu-list button:hover { background: var(--g-acento); color: var(--g-sobre); }
 .menu-list button:hover kbd { color: var(--g-sobre-suave); }
@@ -758,7 +758,7 @@ body.printing[data-paged="yes"] [data-type="footnotes-block"] { display: none !i
 .zoom input { accent-color: var(--g-acento); }
 
 /* Panel de Estilo: encabezado y rótulos clásicos; opciones en bloques */
-.drawer { top: 40px; }
+.drawer { top: 34px; }
 .drawer-head { border-bottom: 3px solid var(--g-texto); }
 .presets { gap: 4px; }
 .preset { border: 0; border-radius: 0; background: var(--g-bloque); }
@@ -799,7 +799,7 @@ body.printing[data-paged="yes"] [data-type="footnotes-block"] { display: none !i
 
 /* Teléfono */
 @media screen and (max-width: 640px) {
-  .menubar { height: calc(52px + env(safe-area-inset-top)); border-bottom: 3px solid var(--g-texto); }
+  .menubar { height: calc(52px + env(safe-area-inset-top)); border-bottom: 1px solid var(--side-line); }
   .doc-name { font: italic 17px var(--font-side); }
   .m-btn { color: var(--g-texto); border-radius: 0; }
   .m-sheet-panel { border-radius: 0; border-top: 3px solid var(--g-texto); }
