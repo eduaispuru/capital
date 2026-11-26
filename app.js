@@ -93,7 +93,7 @@ async function kv(key, value) {
 // Google Drive, las palabras del diccionario, los estilos propios y el estilo de cada archivo pasan
 // solos a la otra computadora. Al leer se mezclan: gana el cambio más reciente de cada cosa.
 const SYNC_FILE = 'capital-ajustes.json';
-const SYNC_KEYS = ['spellWords', 'myStyles', 'bookStyles', 'versionDays'];
+const SYNC_KEYS = ['spellWords', 'myStyles', 'bookStyles', 'versionDays', 'positions'];
 
 function setSyncedPref(key, value) { setPref(key, value); scheduleSync(); }
 function scheduleSync() { clearTimeout(scheduleSync.timer); scheduleSync.timer = setTimeout(syncNow, 1500); }
@@ -105,6 +105,7 @@ function mergeSync(a, b) {
     spellWords: [...new Set([...(a.spellWords || []), ...(b.spellWords || [])])].sort((x, y) => x.localeCompare(y, 'es')),
     myStyles: byKey(a.myStyles, b.myStyles),
     bookStyles: byKey(a.bookStyles, b.bookStyles),
+    positions: byKey(a.positions, b.positions),
     versionDays: newer(a.versionDays, b.versionDays) || {},
   };
 }
@@ -637,6 +638,53 @@ function onInput() {
   scheduleCounts();
   markScenes();
   scheduleSpell();
+  clearTimeout(onInput.spot); onInput.spot = setTimeout(rememberPosition, 800);
+}
+
+/* ---------- Abrir cada archivo donde lo dejaste ---------- */
+// Se anota el lugar de la última edición (párrafo y letra) por archivo. Va en los ajustes compartidos,
+// así otra computadora o el teléfono abren el texto en el mismo lugar.
+const POSITIONS_MAX = 300;
+function rememberPosition() {
+  const b = bookOf(state.file);
+  if (!b || state.source) return;
+  const spot = caretSpot();
+  if (!spot) return;
+  const all = pref('positions', {});
+  all[b.key] = { i: spot.index, o: spot.offset, t: Date.now() };
+  // Solo los más recientes, para que el archivo de ajustes no crezca sin fin
+  const keys = Object.keys(all);
+  if (keys.length > POSITIONS_MAX) keys.sort((x, y) => all[y].t - all[x].t).slice(POSITIONS_MAX).forEach((k) => delete all[k]);
+  setPref('positions', all);
+  state.positionsChanged = true;
+}
+// Se comparte al cambiar de archivo o al dejar la app, no a cada letra
+function sharePositions() { if (state.positionsChanged) { state.positionsChanged = false; scheduleSync(); } }
+document.addEventListener('visibilitychange', () => { if (document.hidden) { rememberPosition(); sharePositions(); } });
+
+function restorePosition() {
+  const b = bookOf(state.file);
+  const p = b && pref('positions', {})[b.key];
+  if (!p || state.source) return;
+  const root = editorRoot();
+  if (!root || !root.children.length) return;
+  const index = Math.min(p.i, root.children.length - 1);
+  const pt = pointAt(index, p.o);
+  if (!pt) return;
+  const r = document.createRange();
+  try { r.setStart(...pt); } catch (e) { return; }
+  r.collapse(true);
+  const sel = getSelection();
+  sel.removeAllRanges();
+  sel.addRange(r);
+  root.focus({ preventScroll: true });
+  // Espera a que se acomoden las páginas y deja ese renglón a un tercio de la pantalla
+  const show = () => {
+    const c = r.getBoundingClientRect();
+    const rect = c.height ? c : (pt[0].nodeType === 1 ? pt[0] : pt[0].parentElement).getBoundingClientRect();
+    desk.scrollTop += rect.top - desk.getBoundingClientRect().top - desk.clientHeight / 3;
+  };
+  requestAnimationFrame(() => requestAnimationFrame(() => { show(); setTimeout(show, 300); }));
 }
 
 function editorRoot() { return document.querySelector('#editor .vditor-ir pre.vditor-reset'); }
@@ -809,8 +857,16 @@ function caretSpot() {
   const sel = getSelection();
   const root = editorRoot();
   if (!sel.rangeCount || !root || !root.contains(sel.anchorNode)) return null;
+  // El cursor puede quedar entre párrafos (en el contenedor del texto, no dentro de uno)
+  if (sel.anchorNode === root) {
+    const n = root.children.length;
+    if (!n) return null;
+    const i = Math.min(sel.anchorOffset, n - 1);
+    return { index: i, offset: sel.anchorOffset >= n ? root.children[i].textContent.length : 0 };
+  }
   let block = sel.anchorNode;
-  while (block.parentNode !== root) block = block.parentNode;
+  while (block.parentNode && block.parentNode !== root) block = block.parentNode;
+  if (block.parentNode !== root) return null;
   const r = document.createRange();
   r.setStart(block, 0);
   r.setEnd(sel.anchorNode, sel.anchorOffset);
@@ -1470,6 +1526,7 @@ async function saveSide() {
 }
 
 async function openFile(handle, path, single = false) {
+  if (state.file) { try { rememberPosition(); sharePositions(); } catch (e) { console.warn(e); } }
   if (state.dirty && state.file) await save();
   try {
     const f = await handle.getFile();
@@ -1492,6 +1549,7 @@ async function openFile(handle, path, single = false) {
     markActive();
     if (innerWidth <= 640) { shell.classList.add('no-side'); syncBars(); }
     focusEditor();
+    restorePosition();
   } catch (e) {
     toast('No se pudo abrir el archivo: ' + e.message);
   }
