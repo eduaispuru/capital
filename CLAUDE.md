@@ -29,3 +29,6 @@ El dueño la usa en Windows y en una Chromebook. Sus textos están en una carpet
 ## Historia
 
 - Se probó un rediseño llamado "Gabinete" y se descartó. El diseño actual es el clásico; el respaldo previo a Gabinete está en la rama `clasico` y en la etiqueta `clasico-v22`.
+- Desde v45 el diseño combina el clásico con el lenguaje "Gabinete bordó" (sistema de diseño del dueño): lo elegido en bloque bordó `#7d1a2a`, pestañas y botones en bloques, barra de arriba clara con filete negro, Hanken Grotesk (en `fonts/`) en menús y controles; quedan del clásico las hojas con sombra, la textura, los títulos en serif cursiva y la letra literaria. Esas reglas están al final de `styles.css`. El diseño anterior está en la rama `clasico-v44`.
+- Teléfono (≤640px): texto a lo ancho sin hojas, barra ☰ · nombre · Aa · ⋯ y panel de opciones desde abajo.
+- Google Drive: `drive.js` imita las carpetas del equipo con la API de Drive (permiso `drive`, cliente OAuth del dueño). El permiso dura una hora y se guarda en `localStorage`.
