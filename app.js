@@ -1660,7 +1660,18 @@ async function mountRoot(handle) {
   versions.last.clear();
   versions.pruned.clear();
   setTimeout(pruneAllVersions, 5000);
-  await refreshDir(handle, ul, '');
+  // Si no se puede leer la carpeta, se dice por qué (antes la lista quedaba vacía, sin aviso)
+  try {
+    await refreshDir(handle, ul, '');
+  } catch (e) {
+    const auth = e.name === 'DriveAuthError';
+    ul.innerHTML = '<li class="tree-error"><p></p><button type="button" class="pill"></button></li>';
+    ul.querySelector('p').textContent = auth ? 'Se cortó la conexión con Google Drive.' : 'No se pudo leer la carpeta: ' + (e.message || e.name);
+    const b = ul.querySelector('button');
+    b.textContent = auth ? 'Reconectar' : 'Reintentar';
+    b.onclick = () => (auth ? driveSignIn() : Promise.resolve()).then(() => mountRoot(handle)).catch((err) => toast(err.message));
+    return;
+  }
   const last = pref('lastFile', null);
   if (last) {
     const h = await resolvePath(handle, last).catch(() => null);
@@ -1726,6 +1737,8 @@ async function restoreRoot() {
     $('treeEmpty').querySelector('.hint').hidden = true;
   }
   if (pref('rootKind', 'local') === 'drive' && dr) {
+    // Con el permiso de Google todavía vigente, entra directo
+    if (driveConnected()) return mountRoot(new DriveDir(dr.id, dr.name));
     const btn = $('reopenBtn');
     btn.textContent = 'Seguir en «' + dr.name + '» (Google Drive)';
     btn.hidden = false;

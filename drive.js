@@ -10,6 +10,19 @@ const DRIVE_FOLDER = 'application/vnd.google-apps.folder';
 const DRIVE_API = 'https://www.googleapis.com/drive/v3/';
 const DRIVE_UPLOAD = 'https://www.googleapis.com/upload/drive/v3/';
 const drive = { token: null, expires: 0, client: null, cache: new Map(), signingIn: null };
+// El permiso de Google dura una hora. Se guarda en este equipo para no pedirlo de nuevo cada vez que
+// el teléfono recarga la app (Android la cierra seguido cuando queda en segundo plano).
+const DRIVE_TOKEN_KEY = 'tinta:driveToken';
+try {
+  const saved = JSON.parse(localStorage.getItem(DRIVE_TOKEN_KEY) || 'null');
+  if (saved && saved.expires > Date.now() + 60000) { drive.token = saved.token; drive.expires = saved.expires; }
+} catch (e) { /* sin guardado */ }
+function saveDriveToken() {
+  try {
+    if (drive.token) localStorage.setItem(DRIVE_TOKEN_KEY, JSON.stringify({ token: drive.token, expires: drive.expires }));
+    else localStorage.removeItem(DRIVE_TOKEN_KEY);
+  } catch (e) { /* sin guardado */ }
+}
 
 class DriveAuthError extends Error {
   constructor() { super('Se cortó la conexión con Google Drive'); this.name = 'DriveAuthError'; }
@@ -42,6 +55,7 @@ function driveSignIn() {
       }
       drive.token = r.access_token;
       drive.expires = Date.now() + (Number(r.expires_in) || 3600) * 1000 - 60000;
+      saveDriveToken();
       hideDriveBar();
       resolve();
     };
@@ -59,7 +73,7 @@ async function driveFetch(url, opts = {}) {
   try {
     res = await fetch(url, { ...opts, headers: { Authorization: 'Bearer ' + drive.token, ...(opts.headers || {}) } });
   } catch (e) { throw new Error('Sin conexión con Google Drive'); }
-  if (res.status === 401) { drive.token = null; showDriveBar(); throw new DriveAuthError(); }
+  if (res.status === 401) { drive.token = null; saveDriveToken(); showDriveBar(); throw new DriveAuthError(); }
   if (!res.ok) {
     let msg = res.status + '';
     try { msg = (await res.json()).error.message || msg; } catch (e) { /* sin detalle */ }
